@@ -36,7 +36,7 @@ export default function LeadDetailPage() {
   const supabase = createClient();
   const { t } = useLocale();
 
-  const [lead, setLead] = useState<Lead & { assigned_profile?: { full_name: string } } | null>(null);
+  const [lead, setLead] = useState<Lead & { assigned_profile?: { full_name: string }; project_id?: string | null } | null>(null);
   const [activities, setActivities] = useState<(LeadActivity & { user?: { full_name: string } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState('');

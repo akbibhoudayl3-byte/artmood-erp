@@ -566,7 +566,7 @@ export default function ProjectProductionPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <RoleGuard roles={['ceo', 'workshop_manager', 'workshop_worker', 'commercial_manager', 'designer']}>
+    <RoleGuard allowedRoles={['ceo', 'workshop_manager', 'workshop_worker', 'commercial_manager', 'designer']}>
       <div className="space-y-4 pb-24">
 
         {/* Header */}

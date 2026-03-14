@@ -209,7 +209,7 @@ export default function PurchaseOrderDetailPage() {
   const currentIdx = statusFlow.indexOf(po.status);
 
   return (
-    <RoleGuard allowed={['ceo', 'workshop_manager', 'commercial_manager']}>
+    <RoleGuard allowedRoles={['ceo', 'workshop_manager', 'commercial_manager']}>
       <div className="max-w-4xl mx-auto p-4 space-y-4">
 
         {/* Success toast */}

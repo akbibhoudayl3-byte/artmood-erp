@@ -815,7 +815,7 @@ function CuttingListContent() {
 
 export default function CuttingListPage() {
   return (
-    <RoleGuard roles={['ceo', 'workshop_manager', 'workshop_worker']}>
+    <RoleGuard allowedRoles={['ceo', 'workshop_manager', 'workshop_worker']}>
       <CuttingListContent />
     </RoleGuard>
   );

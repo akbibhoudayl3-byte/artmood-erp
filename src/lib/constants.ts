@@ -119,6 +119,39 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
+  // ─── New operational roles ──────────────────────────
+  owner_admin: [
+    { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
+    { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+    { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+    { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
+    { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
+    { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
+    { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
+    { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+  ],
+  operations_manager: [
+    { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
+    { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+    { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+    { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
+    { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
+    { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
+    { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
+    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+    { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+  ],
+  logistics: [
+    { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
+    { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
+    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+    { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+  ],
+  worker: [
+    { label: 'My Tasks', href: '/production', icon: 'ClipboardList', i18nKey: 'nav.my_tasks' },
+    { label: 'Scan', href: '/production/scan', icon: 'ScanLine', i18nKey: 'nav.scan' },
+    { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+  ],
 };
 
 // Grouped navigation for Sidebar (better visual hierarchy)

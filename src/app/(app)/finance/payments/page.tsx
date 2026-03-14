@@ -8,14 +8,24 @@ import Input from '@/components/ui/Input';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { useAuth } from '@/lib/hooks/useAuth';
-import type { Payment, PaymentType, PaymentMethod } from '@/types/database';
+import type { PaymentType, PaymentMethod } from '@/types/database';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import { Plus, X, Banknote, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 
 const PAYMENT_TYPES: PaymentType[] = ['deposit', 'pre_installation', 'final', 'other'];
 const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'cheque', 'bank_transfer', 'card', 'other'];
 
-interface PaymentWithProject extends Payment {
+interface PaymentWithProject {
+  id: string;
+  project_id: string;
+  amount: number;
+  payment_type: PaymentType;
+  payment_method: PaymentMethod | null;
+  reference_number: string | null;
+  notes: string | null;
+  received_by: string | null;
+  received_at: string;
+  created_at: string;
   project?: { client_name: string; reference_code: string } | null;
 }
 

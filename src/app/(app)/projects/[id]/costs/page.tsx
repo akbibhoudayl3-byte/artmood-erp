@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -28,8 +29,14 @@ export default function ProjectCostsPage() {
 
   // Form
   const [costType, setCostType] = useState<CostType>('material');
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  const [costDescription, setCostDescription] = useState('');
+  const [costAmount, setCostAmount] = useState('');
+  const [costError, setCostError] = useState('');
+  // Aliases for backward compat
+  const description = costDescription;
+  const setDescription = setCostDescription;
+  const amount = costAmount;
+  const setAmount = setCostAmount;
 
   useEffect(() => { loadData(); }, [projectId]);
 
@@ -81,7 +88,7 @@ export default function ProjectCostsPage() {
 
   async function deleteCost(costId: string) {
     if (!confirm('Delete this cost entry?')) return;
-    const { error: deleteErr } = supabase.from('project_costs').delete().eq('id', costId);
+    const { error: deleteErr } = await supabase.from('project_costs').delete().eq('id', costId);
     if (deleteErr) {
       setCostError('Erreur suppression: ' + deleteErr.message);
       return;

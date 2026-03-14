@@ -551,7 +551,7 @@ export default function WorkTimeReportsPage() {
   ];
 
   return (
-    <RoleGuard roles={['workshop_manager', 'operations_manager', 'hr_manager', 'ceo', 'owner_admin']}>
+    <RoleGuard allowedRoles={['workshop_manager', 'operations_manager', 'hr_manager', 'ceo', 'owner_admin']}>
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
 
         {/* Header */}

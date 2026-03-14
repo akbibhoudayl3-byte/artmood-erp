@@ -92,7 +92,7 @@ export default function StockAlertsPage() {
     setShowReorderModal(item);
     setReorderForm({
       supplier_id: (item as any).supplier_id || '',
-      quantity: item.minimum_quantity ? String(item.minimum_quantity * 2) : '10',
+      quantity: item.low_stock_threshold ? String(item.low_stock_threshold * 2) : '10',
       unit: item.unit || '',
       notes: '',
     });
@@ -235,7 +235,7 @@ export default function StockAlertsPage() {
             </p>
           </div>
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={handleNotifyWorkshopManagers}
             disabled={sendingNotification || (outOfStock.length + lowStock.length) === 0}
@@ -389,7 +389,7 @@ export default function StockAlertsPage() {
                   {/* Action Buttons */}
                   <div className="flex flex-wrap items-center gap-2 mt-3 pt-2 border-t border-gray-100">
                     <Button
-                      variant="outline"
+                      variant="secondary"
                       size="sm"
                       onClick={() => openReorderModal(item)}
                       className="flex items-center gap-1 text-xs"
@@ -504,7 +504,7 @@ export default function StockAlertsPage() {
 
               <div className="flex gap-2 p-4 border-t">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   className="flex-1"
                   onClick={() => setShowReorderModal(null)}

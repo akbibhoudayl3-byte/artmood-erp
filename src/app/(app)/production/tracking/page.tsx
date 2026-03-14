@@ -261,7 +261,7 @@ export default function ProductionTrackingPage() {
                     className={`w-full flex items-center gap-3 group transition-all rounded-lg p-1 ${
                       isSelected ? 'ring-2 ring-offset-1' : 'hover:bg-gray-50'
                     }`}
-                    style={{ ringColor: STATION_COLORS[station] }}
+                    style={{ '--tw-ring-color': STATION_COLORS[station] } as React.CSSProperties}
                   >
                     <span
                       className="w-20 text-xs font-semibold text-right shrink-0"

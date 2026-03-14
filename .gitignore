@@ -45,5 +45,8 @@ ecosystem.config.js
 # Static backup (deprecated)
 static_bak/
 
+# Staging patches (old dev files)
+_staging/
+
 # Claude
 .claude/

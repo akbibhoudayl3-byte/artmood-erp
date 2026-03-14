@@ -322,14 +322,16 @@ export async function updateProjectStatus(
 
   if (error) return fail('Failed to update project status: ' + error.message);
 
-  // Log event
-  await supabase().from('project_events').insert({
-    project_id: projectId,
-    event_type: 'status_change',
-    description: `Status changed to ${newStatus}`,
-    new_value: newStatus,
-    user_id: updatedBy || null,   // column is user_id (not created_by)
-  }).catch(() => {}); // non-fatal
+  // Log event (non-fatal)
+  try {
+    await supabase().from('project_events').insert({
+      project_id: projectId,
+      event_type: 'status_change',
+      description: `Status changed to ${newStatus}`,
+      new_value: newStatus,
+      user_id: updatedBy || null,
+    });
+  } catch { /* ignore */ }
 
   return ok();
 }
@@ -412,7 +414,7 @@ export async function recordProductionUsage(payload: ProductionUsagePayload): Pr
       is_reusable: false,
       notes: `Production waste: ${payload.waste_qty} ${payload.unit} | Order: ${payload.order_name || ''} | Stage: ${payload.stage}`,
       created_by: payload.worker_id || null,
-    }).catch(() => {}); // non-fatal
+    });
   }
 
   // 5. Audit waste movement (quantity: 0 — no additional stock deduction)
@@ -426,14 +428,14 @@ export async function recordProductionUsage(payload: ProductionUsagePayload): Pr
       project_id: payload.project_id,
       notes: `Waste: ${payload.waste_qty} ${payload.unit} from ${payload.material_name || 'unknown'} | Stage: ${payload.stage}`,
       created_by: payload.worker_id || null,
-    }).catch(() => {}); // non-fatal
+    });
   }
 
   // 6. Mark requirement as consumed + release reservation
   await createClient().from('production_material_requirements')
     .update({ status: 'consumed' })
     .eq('id', payload.requirement_id)
-    .catch(() => {});
+    ;
 
   if (payload.reserved_quantity !== undefined && payload.planned_qty !== undefined) {
     await releaseStockReservation(payload.material_id, payload.planned_qty);

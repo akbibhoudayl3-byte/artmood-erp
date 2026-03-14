@@ -724,7 +724,7 @@ function BomViewerContent() {
 
 export default function BomViewerPage() {
   return (
-    <RoleGuard roles={['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker']}>
+    <RoleGuard allowedRoles={['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker']}>
       <BomViewerContent />
     </RoleGuard>
   );

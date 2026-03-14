@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useGeolocation } from './use_geolocation';
+import { useGeolocation } from './useGeolocation';
 
 export interface GeoGateResult {
   allowed: boolean;
