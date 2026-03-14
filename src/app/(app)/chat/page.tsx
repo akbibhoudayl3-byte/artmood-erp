@@ -277,27 +277,25 @@ export default function ChatPage() {
       }
     }
 
-    // Create new conversation
-    const { data: newConv, error: convErr } = await supabase
+    // Create new conversation (generate ID client-side to avoid RLS SELECT issue)
+    const convId = crypto.randomUUID();
+
+    const { error: convErr } = await supabase
       .from('chat_conversations')
-      .insert({ type: 'direct' })
-      .select('id')
-      .single();
+      .insert({ id: convId, type: 'direct' });
 
     if (convErr) { console.error('Create conv error:', convErr); return; }
 
-    if (newConv) {
-      const { error: partErr } = await supabase.from('chat_participants').insert([
-        { conversation_id: newConv.id, user_id: userId },
-        { conversation_id: newConv.id, user_id: otherUserId },
-      ]);
-      if (partErr) { console.error('Add participants error:', partErr); return; }
+    const { error: partErr } = await supabase.from('chat_participants').insert([
+      { conversation_id: convId, user_id: userId },
+      { conversation_id: convId, user_id: otherUserId },
+    ]);
+    if (partErr) { console.error('Add participants error:', partErr); return; }
 
-      setActiveConvId(newConv.id);
-      setShowNewChat(false);
-      setShowMobileConv(false);
-      await loadConversations();
-    }
+    setActiveConvId(convId);
+    setShowNewChat(false);
+    setShowMobileConv(false);
+    await loadConversations();
   }
 
   // ── Start group conversation ──────────────────────────────────────────────
@@ -307,28 +305,26 @@ export default function ChatPage() {
   async function createGroupChat() {
     if (!userId || !groupName.trim() || selectedUsers.length < 1) return;
 
-    const { data: newConv, error: convErr } = await supabase
+    const groupConvId = crypto.randomUUID();
+
+    const { error: convErr } = await supabase
       .from('chat_conversations')
-      .insert({ type: 'group', name: groupName.trim() })
-      .select('id')
-      .single();
+      .insert({ id: groupConvId, type: 'group', name: groupName.trim() });
 
     if (convErr) { console.error('Create group error:', convErr); return; }
 
-    if (newConv) {
-      const participants = [userId, ...selectedUsers].map(uid => ({
-        conversation_id: newConv.id,
-        user_id: uid,
-      }));
-      await supabase.from('chat_participants').insert(participants);
+    const participants = [userId, ...selectedUsers].map(uid => ({
+      conversation_id: groupConvId,
+      user_id: uid,
+    }));
+    await supabase.from('chat_participants').insert(participants);
 
-      setActiveConvId(newConv.id);
-      setShowNewChat(false);
-      setShowMobileConv(false);
-      setGroupName('');
-      setSelectedUsers([]);
-      await loadConversations();
-    }
+    setActiveConvId(groupConvId);
+    setShowNewChat(false);
+    setShowMobileConv(false);
+    setGroupName('');
+    setSelectedUsers([]);
+    await loadConversations();
   }
 
   // ── Realtime subscription ─────────────────────────────────────────────────
