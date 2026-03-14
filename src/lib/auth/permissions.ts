@@ -46,9 +46,6 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   // Calendar — most roles
   '/calendar':           ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'hr_manager', 'installer'],
 
-  // Chat — everyone
-  '/chat':               ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
-
   // Dashboard — everyone
   '/dashboard':          ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
 
@@ -116,8 +113,6 @@ export const API_ROLES: Record<string, UserRole[]> = {
   // Work time — all employees (everyone clocks in/out)
   '/api/work-time':                    ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
 
-  // Chat — all employees
-  '/api/chat':                         ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
 };
 
 /**
