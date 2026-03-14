@@ -35,7 +35,7 @@ interface Message {
   sender_id: string;
   content: string;
   created_at: string;
-  is_deleted: boolean;
+  is_deleted?: boolean;
   sender?: Profile;
 }
 
@@ -154,7 +154,7 @@ export default function ChatPage() {
       // Get last message
       const { data: lastMsgs } = await supabase
         .from('chat_messages')
-        .select('id, sender_id, content, created_at, is_deleted')
+        .select('id, sender_id, content, created_at')
         .eq('conversation_id', conv.id)
         .order('created_at', { ascending: false })
         .limit(1);
@@ -195,7 +195,7 @@ export default function ChatPage() {
 
     const { data } = await supabase
       .from('chat_messages')
-      .select('id, conversation_id, sender_id, content, created_at, is_deleted')
+      .select('id, conversation_id, sender_id, content, created_at')
       .eq('conversation_id', activeConvId)
       .order('created_at', { ascending: true })
       .limit(100);
@@ -278,17 +278,20 @@ export default function ChatPage() {
     }
 
     // Create new conversation
-    const { data: newConv } = await supabase
+    const { data: newConv, error: convErr } = await supabase
       .from('chat_conversations')
-      .insert({ type: 'direct', created_by: userId })
+      .insert({ type: 'direct' })
       .select('id')
       .single();
 
+    if (convErr) { console.error('Create conv error:', convErr); return; }
+
     if (newConv) {
-      await supabase.from('chat_participants').insert([
+      const { error: partErr } = await supabase.from('chat_participants').insert([
         { conversation_id: newConv.id, user_id: userId },
         { conversation_id: newConv.id, user_id: otherUserId },
       ]);
+      if (partErr) { console.error('Add participants error:', partErr); return; }
 
       setActiveConvId(newConv.id);
       setShowNewChat(false);
@@ -304,11 +307,13 @@ export default function ChatPage() {
   async function createGroupChat() {
     if (!userId || !groupName.trim() || selectedUsers.length < 1) return;
 
-    const { data: newConv } = await supabase
+    const { data: newConv, error: convErr } = await supabase
       .from('chat_conversations')
-      .insert({ type: 'group', name: groupName.trim(), created_by: userId })
+      .insert({ type: 'group', name: groupName.trim() })
       .select('id')
       .single();
+
+    if (convErr) { console.error('Create group error:', convErr); return; }
 
     if (newConv) {
       const participants = [userId, ...selectedUsers].map(uid => ({
