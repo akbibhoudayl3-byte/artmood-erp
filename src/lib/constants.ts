@@ -193,6 +193,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
     ]},
     { label: '', items: [
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -210,6 +211,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
     ]},
     { label: '', items: [
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -225,6 +227,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
     ]},
     { label: '', items: [
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -253,6 +256,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
       { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -263,6 +267,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
     { label: 'Découpe & Chant', href: '/production/cutting', icon: 'Scissors', i18nKey: 'nav.cutting' },
       { label: 'Report Issue', href: '/production/issues', icon: 'AlertTriangle', i18nKey: 'nav.report_issue' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -271,6 +276,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Schedule', href: '/installation', icon: 'Calendar', i18nKey: 'nav.schedule' },
       { label: 'Current Job', href: '/installation/current', icon: 'Wrench', i18nKey: 'nav.current_job' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -286,6 +292,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
     ]},
     { label: '', items: [
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -294,6 +301,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
       { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
       { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -336,6 +344,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
     ]},
     { label: '', items: [
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -365,6 +374,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
     ]},
     { label: '', items: [
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -375,6 +385,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
       { label: 'Installation', href: '/installation', icon: 'Truck', i18nKey: 'nav.installation' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -388,6 +399,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Report Issue', href: '/production/issues', icon: 'AlertTriangle', i18nKey: 'nav.report_issue' },
       { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
+      { label: 'Chat', href: '/chat', icon: 'MessageCircle', i18nKey: 'nav.chat' },
       { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
@@ -606,6 +618,7 @@ export const PAGE_ROLES: Record<string, UserRole[]> = {
   '/quotes': ['ceo', 'commercial_manager', 'designer', 'owner_admin', 'operations_manager'],
   '/work-time':    ['workshop_worker','worker','installer','designer','operations_manager','workshop_manager','logistics','ceo','owner_admin','hr_manager'],
   '/hr/work-time': ['workshop_manager','operations_manager','hr_manager','ceo','owner_admin'],
+  '/chat': ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager', 'owner_admin', 'operations_manager', 'logistics', 'worker'],
 };
 
 // ============================================================

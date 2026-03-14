@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, FolderKanban, Factory, Wallet, Package,
   Calendar, CalendarOff, Wrench, UserCheck, Megaphone, Settings, FileText,
   ClipboardList, ScanLine, X, Truck, ShoppingCart, AlertTriangle, PieChart,
-  Monitor, Star, LogOut,
+  Monitor, Star, LogOut, MessageCircle, Clock, BarChart2, BookOpen,
   Layers, BarChart3, Scissors, Upload
 } from 'lucide-react';
 import { NAV_GROUPS } from '@/lib/constants';
@@ -18,7 +18,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   LayoutDashboard, Users, FolderKanban, Factory, Wallet, Package,
   Calendar, CalendarOff, Wrench, UserCheck, Megaphone, Settings, FileText,
   ClipboardList, ScanLine, Truck, ShoppingCart, AlertTriangle, PieChart,
-  Monitor, Star,
+  Monitor, Star, MessageCircle, Clock, BarChart2, BookOpen,
   Layers, BarChart3, Scissors, Upload,
 };
 
