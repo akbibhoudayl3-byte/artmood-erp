@@ -23,6 +23,9 @@ export default function ChequesPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [actionCheque, setActionCheque] = useState<Cheque | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
   const [form, setForm] = useState({
     type: 'received' as 'received' | 'issued',
@@ -47,7 +50,7 @@ export default function ChequesPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await supabase.from('cheques').insert({
+    const { error } = await supabase.from('cheques').insert({
       type: form.type,
       amount: parseFloat(form.amount),
       due_date: form.due_date,
@@ -61,10 +64,58 @@ export default function ChequesPage() {
       created_by: profile?.id,
     });
     setSaving(false);
+    if (error) {
+      alert('Error: ' + error.message);
+      return;
+    }
     setShowForm(false);
     setForm({ type: 'received', amount: '', due_date: '', cheque_number: '', bank_name: '', client_name: '', supplier_name: '', notes: '', photo_url: '' });
+    setSuccessMsg('Cheque added successfully');
+    setTimeout(() => setSuccessMsg(''), 3000);
     loadCheques();
   }
+
+  async function updateChequeStatus(chequeId: string, newStatus: string) {
+    setUpdating(true);
+    const { error } = await supabase
+      .from('cheques')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', chequeId);
+
+    if (error) {
+      alert('Error: ' + error.message);
+    } else {
+      setSuccessMsg(`Cheque marked as ${newStatus}`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+      loadCheques();
+    }
+    setUpdating(false);
+    setActionCheque(null);
+  }
+
+  const STATUS_FLOW: Record<string, { label: string; next: { status: string; label: string; color: string }[] }> = {
+    pending: {
+      label: 'Pending',
+      next: [
+        { status: 'deposited', label: 'Mark Deposited', color: 'bg-blue-600' },
+        { status: 'bounced', label: 'Mark Bounced', color: 'bg-red-600' },
+      ],
+    },
+    deposited: {
+      label: 'Deposited',
+      next: [
+        { status: 'cleared', label: 'Mark Cleared', color: 'bg-emerald-600' },
+        { status: 'bounced', label: 'Mark Bounced', color: 'bg-red-600' },
+      ],
+    },
+    cleared: { label: 'Cleared', next: [] },
+    bounced: {
+      label: 'Bounced',
+      next: [
+        { status: 'pending', label: 'Reset to Pending', color: 'bg-gray-600' },
+      ],
+    },
+  };
 
   const filtered = cheques.filter(c => filter === 'all' || c.type === filter || c.status === filter);
 
@@ -106,10 +157,21 @@ export default function ChequesPage() {
         ))}
       </div>
 
+      {/* Success Banner */}
+      {successMsg && (
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-4 py-3 text-sm font-medium">
+          ✓ {successMsg}
+        </div>
+      )}
+
       {/* Cheque List */}
       <div className="space-y-2.5">
         {filtered.map(cheque => (
-          <Card key={cheque.id} className="p-4">
+          <Card
+            key={cheque.id}
+            className="p-4 cursor-pointer active:scale-[0.98] transition-transform"
+            onClick={() => setActionCheque(cheque)}
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -134,6 +196,70 @@ export default function ChequesPage() {
           </Card>
         ))}
       </div>
+
+      {/* Cheque Action Modal */}
+      {actionCheque && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
+          <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl p-6 animate-fade-scale">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-[#1a1a2e]">Cheque Details</h2>
+              <button onClick={() => setActionCheque(null)} className="p-1.5 hover:bg-[#F5F3F0] rounded-xl active:scale-95"><X size={20} /></button>
+            </div>
+
+            <div className="space-y-3 mb-5">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={actionCheque.type} />
+                <StatusBadge status={actionCheque.status} />
+              </div>
+              <p className="text-2xl font-bold text-[#1a1a2e]">{Number(actionCheque.amount).toLocaleString()} MAD</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-[#64648B] text-xs">Name</p>
+                  <p className="font-medium">{actionCheque.client_name || actionCheque.supplier_name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-[#64648B] text-xs">Due Date</p>
+                  <p className="font-medium">{new Date(actionCheque.due_date).toLocaleDateString('fr-MA')}</p>
+                </div>
+                {actionCheque.cheque_number && (
+                  <div>
+                    <p className="text-[#64648B] text-xs">Cheque #</p>
+                    <p className="font-medium">{actionCheque.cheque_number}</p>
+                  </div>
+                )}
+                {actionCheque.bank_name && (
+                  <div>
+                    <p className="text-[#64648B] text-xs">Bank</p>
+                    <p className="font-medium">{actionCheque.bank_name}</p>
+                  </div>
+                )}
+              </div>
+              {actionCheque.notes && (
+                <p className="text-sm text-[#64648B] italic">{actionCheque.notes}</p>
+              )}
+            </div>
+
+            {/* Status Actions */}
+            {STATUS_FLOW[actionCheque.status]?.next.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs text-[#64648B] font-semibold uppercase tracking-wider">Change Status</p>
+                {STATUS_FLOW[actionCheque.status].next.map(action => (
+                  <button
+                    key={action.status}
+                    onClick={() => updateChequeStatus(actionCheque.id, action.status)}
+                    disabled={updating}
+                    className={`w-full ${action.color} text-white rounded-xl py-3 text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-50`}
+                  >
+                    {updating ? '...' : action.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-emerald-600 font-medium text-center py-2">✓ This cheque is {actionCheque.status}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Add Cheque Modal - bottom sheet on mobile */}
       {showForm && (

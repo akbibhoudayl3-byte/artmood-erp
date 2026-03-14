@@ -115,8 +115,8 @@ export default function NewQuotePage() {
       }));
       await supabase.from('quote_lines').insert(quoteLines);
 
-      // Update project total_amount
-      await supabase.from('projects').update({ total_amount: total }).eq('id', projectId);
+      // Note: project total_amount is only updated when quote is accepted (in quote detail page)
+      // Draft quotes should not overwrite the project total
 
       router.push(`/quotes/${quote.id}`);
     } else {

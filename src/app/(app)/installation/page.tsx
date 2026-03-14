@@ -6,11 +6,12 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useLocale } from '@/lib/hooks/useLocale';
+import { useInstallationGeogate } from '@/lib/hooks/useInstallationGeogate';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import type { Installation } from '@/types/database';
-import { MapPin, Phone, Clock, Navigation, Camera, CheckCircle, CalendarDays } from 'lucide-react';
+import { MapPin, Phone, Clock, Navigation, Camera, CheckCircle, CalendarDays, ShieldAlert } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
 export default function InstallationPage() {
@@ -18,8 +19,10 @@ export default function InstallationPage() {
   const router = useRouter();
   const supabase = createClient();
   const { t } = useLocale();
+  const { geoGate, loading: geoLoading } = useInstallationGeogate();
   const [installations, setInstallations] = useState<(Installation & { project?: { client_name: string; reference_code: string } })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
   const isInstaller = profile?.role === 'installer';
 
@@ -41,30 +44,50 @@ export default function InstallationPage() {
     setLoading(false);
   }
 
-  async function handleCheckin(id: string) {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      await supabase.from('installations').update({
-        status: 'in_progress',
-        checkin_at: new Date().toISOString(),
-        checkin_lat: pos.coords.latitude,
-        checkin_lng: pos.coords.longitude,
-      }).eq('id', id);
-      loadInstallations();
-    });
+  async function handleCheckin(id: string, projectId: string) {
+    setGeoError(null);
+    const result = await geoGate(projectId, 'checkin', id);
+    if (!result.allowed) {
+      setGeoError(result.reason);
+      return;
+    }
+    // Geo-gate passed — record check-in
+    await supabase.from('installations').update({
+      status: 'in_progress',
+      checkin_at: new Date().toISOString(),
+    }).eq('id', id);
+    // Re-fetch GPS for lat/lng storage (hook already obtained it)
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        await supabase.from('installations').update({
+          checkin_lat: pos.coords.latitude,
+          checkin_lng: pos.coords.longitude,
+        }).eq('id', id);
+      }, () => {});
+    }
+    loadInstallations();
   }
 
-  async function handleCheckout(id: string) {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      await supabase.from('installations').update({
-        status: 'completed',
-        checkout_at: new Date().toISOString(),
-        checkout_lat: pos.coords.latitude,
-        checkout_lng: pos.coords.longitude,
-      }).eq('id', id);
-      loadInstallations();
-    });
+  async function handleCheckout(id: string, projectId: string) {
+    setGeoError(null);
+    const result = await geoGate(projectId, 'checkout', id);
+    if (!result.allowed) {
+      setGeoError(result.reason);
+      return;
+    }
+    await supabase.from('installations').update({
+      status: 'completed',
+      checkout_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        await supabase.from('installations').update({
+          checkout_lat: pos.coords.latitude,
+          checkout_lng: pos.coords.longitude,
+        }).eq('id', id);
+      }, () => {});
+    }
+    loadInstallations();
   }
 
   const today = new Date().toISOString().split('T')[0];
@@ -78,6 +101,18 @@ export default function InstallationPage() {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold text-gray-900">{t('install.title')}</h1>
+
+        {/* Geo-gate error banner */}
+        {geoError && (
+          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 p-3 rounded-xl">
+            <ShieldAlert size={18} className="shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Location check failed</p>
+              <p>{geoError}</p>
+            </div>
+            <button onClick={() => setGeoError(null)} className="ml-auto text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
+          </div>
+        )}
 
         {todayInstalls.length > 0 ? (
           <>
@@ -113,8 +148,8 @@ export default function InstallationPage() {
                           <Navigation size={18} /> {t('install.location')}
                         </Button>
                       )}
-                      <Button variant="success" size="lg" className="flex-1" onClick={() => handleCheckin(inst.id)}>
-                        <CheckCircle size={18} /> {t('install.check_in')}
+                      <Button variant="success" size="lg" className="flex-1" onClick={() => handleCheckin(inst.id, inst.project_id)} disabled={geoLoading}>
+                        <CheckCircle size={18} /> {geoLoading ? t('common.loading') : t('install.check_in')}
                       </Button>
                     </>
                   )}
@@ -124,8 +159,8 @@ export default function InstallationPage() {
                         onClick={() => router.push(`/installation/${inst.id}`)}>
                         <Camera size={18} /> {t('install.photos')} & {t('install.checklist')}
                       </Button>
-                      <Button variant="primary" size="lg" className="flex-1" onClick={() => handleCheckout(inst.id)}>
-                        <CheckCircle size={18} /> {t('install.check_out')}
+                      <Button variant="primary" size="lg" className="flex-1" onClick={() => handleCheckout(inst.id, inst.project_id)} disabled={geoLoading}>
+                        <CheckCircle size={18} /> {geoLoading ? t('common.loading') : t('install.check_out')}
                       </Button>
                     </>
                   )}

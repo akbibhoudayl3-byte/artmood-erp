@@ -5,17 +5,19 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useLocale } from '@/lib/hooks/useLocale';
+import { useInstallationGeogate } from '@/lib/hooks/useInstallationGeogate';
 import Card, { CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import {
   Wrench, MapPin, Phone, Clock, Navigation, CheckCircle,
-  Calendar, ArrowRight, LogOut,
+  Calendar, ArrowRight, LogOut, ShieldAlert,
 } from 'lucide-react';
 
 interface CurrentJob {
   id: string;
+  project_id: string;
   scheduled_date: string;
   scheduled_time: string | null;
   estimated_duration_hours: number | null;
@@ -34,9 +36,11 @@ export default function CurrentJobPage() {
   const { t } = useLocale();
   const supabase = createClient();
 
+  const { geoGate, loading: geoLoading } = useInstallationGeogate();
   const [job, setJob] = useState<CurrentJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
   // Checkout-specific state
   const [checkoutNotes, setCheckoutNotes] = useState('');
@@ -64,67 +68,89 @@ export default function CurrentJobPage() {
   async function handleCheckin() {
     if (!job || checking) return;
     setChecking(true);
-    const doCheckin = async (lat?: number, lng?: number) => {
-      await supabase.from('installations').update({
-        status: 'in_progress',
-        checkin_at: new Date().toISOString(),
-        ...(lat !== undefined ? { checkin_lat: lat, checkin_lng: lng } : {}),
-      }).eq('id', job.id);
-      loadCurrentJob();
+    setGeoError(null);
+
+    // Enforce geo-gate before allowing check-in
+    const result = await geoGate(job.project_id, 'checkin', job.id);
+    if (!result.allowed) {
+      setGeoError(result.reason);
       setChecking(false);
-    };
+      return;
+    }
+
+    await supabase.from('installations').update({
+      status: 'in_progress',
+      checkin_at: new Date().toISOString(),
+    }).eq('id', job.id);
+
+    // Store GPS coords asynchronously
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => doCheckin(pos.coords.latitude, pos.coords.longitude),
-        () => doCheckin()
+        async (pos) => {
+          await supabase.from('installations').update({
+            checkin_lat: pos.coords.latitude,
+            checkin_lng: pos.coords.longitude,
+          }).eq('id', job.id);
+        },
+        () => {}
       );
-    } else {
-      doCheckin();
     }
+    await loadCurrentJob();
+    setChecking(false);
   }
 
   async function handleCheckout() {
     if (!job || checking) return;
     setChecking(true);
+    setGeoError(null);
 
-    const doCheckout = async (lat?: number, lng?: number) => {
-      const updatePayload: Record<string, unknown> = {
-        status: 'completed',
-        checkout_at: new Date().toISOString(),
-        ...(lat !== undefined ? { checkout_lat: lat, checkout_lng: lng } : {}),
-        ...(checkoutNotes.trim() ? { completion_notes: checkoutNotes.trim() } : {}),
-      };
-
-      const { error } = await supabase
-        .from('installations')
-        .update(updatePayload)
-        .eq('id', job.id);
-
-      if (error) {
-        console.error('Checkout failed:', error.message);
-        setChecking(false);
-        return;
-      }
-
-      setSuccessMessage('Job completed! ✓');
-      setShowCheckoutNotes(false);
+    // Enforce geo-gate before allowing checkout
+    const result = await geoGate(job.project_id, 'checkout', job.id);
+    if (!result.allowed) {
+      setGeoError(result.reason);
       setChecking(false);
+      return;
+    }
 
-      // Reload job state then navigate after 2 s
-      await loadCurrentJob();
-      setTimeout(() => {
-        router.push(`/installation/${job.id}`);
-      }, 2000);
+    const updatePayload: Record<string, unknown> = {
+      status: 'completed',
+      checkout_at: new Date().toISOString(),
+      ...(checkoutNotes.trim() ? { completion_notes: checkoutNotes.trim() } : {}),
     };
 
+    const { error } = await supabase
+      .from('installations')
+      .update(updatePayload)
+      .eq('id', job.id);
+
+    if (error) {
+      console.error('Checkout failed:', error.message);
+      setChecking(false);
+      return;
+    }
+
+    // Store GPS coords asynchronously
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => doCheckout(pos.coords.latitude, pos.coords.longitude),
-        () => doCheckout()
+        async (pos) => {
+          await supabase.from('installations').update({
+            checkout_lat: pos.coords.latitude,
+            checkout_lng: pos.coords.longitude,
+          }).eq('id', job.id);
+        },
+        () => {}
       );
-    } else {
-      doCheckout();
     }
+
+    setSuccessMessage('Job completed! ✓');
+    setShowCheckoutNotes(false);
+    setChecking(false);
+
+    // Reload job state then navigate after 2 s
+    await loadCurrentJob();
+    setTimeout(() => {
+      router.push(`/installation/${job.id}`);
+    }, 2000);
   }
 
   if (loading) {
@@ -148,6 +174,18 @@ export default function CurrentJobPage() {
             {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
+
+        {/* Geo-gate error banner */}
+        {geoError && (
+          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 p-3 rounded-xl">
+            <ShieldAlert size={18} className="shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Location check failed</p>
+              <p>{geoError}</p>
+            </div>
+            <button onClick={() => setGeoError(null)} className="ml-auto text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
+          </div>
+        )}
 
         {/* Success message banner */}
         {successMessage && (

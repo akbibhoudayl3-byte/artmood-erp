@@ -62,7 +62,7 @@ export default function RecurringExpensesPage() {
 
     const profile = (await supabase.auth.getUser()).data.user;
 
-    await supabase.from('expenses').insert({
+    const { error } = await supabase.from('expenses').insert({
       category: form.category,
       amount: parseFloat(form.amount),
       description: form.description || null,
@@ -74,17 +74,39 @@ export default function RecurringExpensesPage() {
     });
 
     setSaving(false);
+    if (error) {
+      alert('Error: ' + error.message);
+      return;
+    }
     setShowForm(false);
     setForm({ category: 'rent', amount: '', description: '', payment_method: 'bank_transfer', recurring_day: '1' });
     loadExpenses();
   }
 
   async function deleteExpense(id: string) {
+    if (!confirm('Delete this recurring expense?')) return;
     await supabase.from('expenses').delete().eq('id', id);
     loadExpenses();
   }
 
   async function generateMonthly() {
+    const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+
+    // Idempotency check: see if we already generated this month
+    const { data: existing } = await supabase
+      .from('expenses')
+      .select('id')
+      .eq('is_recurring', false)
+      .like('description', '[Auto]%')
+      .gte('date', `${currentMonth}-01`)
+      .lte('date', `${currentMonth}-31`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      alert('Recurring expenses have already been generated for this month.');
+      return;
+    }
+
     setGenerating(true);
     const profile = (await supabase.auth.getUser()).data.user;
     const today = new Date().toISOString().split('T')[0];
@@ -100,7 +122,12 @@ export default function RecurringExpensesPage() {
     }));
 
     if (inserts.length > 0) {
-      await supabase.from('expenses').insert(inserts);
+      const { error: expErr } = await supabase.from('expenses').insert(inserts);
+      if (expErr) {
+        alert('Error generating expenses: ' + expErr.message);
+        setGenerating(false);
+        return;
+      }
 
       // Also log to ledger
       const ledgerInserts = inserts.map(ins => ({
@@ -123,7 +150,7 @@ export default function RecurringExpensesPage() {
   const totalMonthly = expenses.reduce((s, e) => s + Number(e.amount), 0);
 
   return (
-    <RoleGuard allowedRoles={['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'] as any[]}>
+    <RoleGuard allowedRoles={['ceo'] as any[]}>
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <button onClick={() => router.push('/settings')} className="p-2 hover:bg-[#F5F3F0] rounded-xl">

@@ -113,20 +113,28 @@ export default function CalendarPage() {
     if (!formTitle.trim() || !formDate) return;
     setSaving(true);
 
-    const payload = {
+    const basePayload = {
       title: formTitle.trim(),
       description: formDesc || null,
       event_type: formType,
       event_date: formDate,
       event_time: formTime || null,
       is_all_day: !formTime,
-      created_by: profile?.id,
     };
 
+    let saveError: any = null;
     if (editingEvent) {
-      await supabase.from('calendar_events').update(payload).eq('id', editingEvent.id);
+      const { error } = await supabase.from('calendar_events').update(basePayload).eq('id', editingEvent.id);
+      saveError = error;
     } else {
-      await supabase.from('calendar_events').insert(payload);
+      const { error } = await supabase.from('calendar_events').insert({ ...basePayload, created_by: profile?.id });
+      saveError = error;
+    }
+
+    if (saveError) {
+      alert('Error: ' + saveError.message);
+      setSaving(false);
+      return;
     }
 
     setShowForm(false);

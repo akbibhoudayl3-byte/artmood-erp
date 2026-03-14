@@ -269,9 +269,9 @@ export async function recordPayment(payload: PaymentPayload): Promise<ServiceRes
 
     await supabase().from('projects').update({
       paid_amount: newPaid,
-      deposit_paid: pct >= 0.5 ? true : undefined,
-      pre_install_paid: pct >= 0.9 ? true : undefined,
-      final_paid: pct >= 1.0 ? true : undefined,
+      deposit_paid: pct >= 0.5,
+      pre_install_paid: pct >= 0.9,
+      final_paid: pct >= 1.0,
       updated_at: new Date().toISOString(),
     }).eq('id', payload.project_id);
   }

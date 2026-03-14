@@ -115,11 +115,49 @@ export default function ProductionScanPage() {
     if (!part) return;
     setScanning(true);
 
-    await supabase.from('production_scans').insert({
+    const { error: scanErr } = await supabase.from('production_scans').insert({
       part_id: part.id,
       station,
       scanned_by: profile?.id,
     });
+
+    if (scanErr) {
+      setError('Failed to record scan: ' + scanErr.message);
+      setScanning(false);
+      return;
+    }
+
+    // Update the part's current station in the database
+    const { error: updateErr } = await supabase
+      .from('production_parts')
+      .update({ current_station: station, updated_at: new Date().toISOString() })
+      .eq('id', part.id);
+
+    if (updateErr) {
+      setError('Scan recorded but station update failed: ' + updateErr.message);
+      setScanning(false);
+      return;
+    }
+
+    // If part reached 'packing' or 'done', update the production order progress
+    if (station === 'packing' || station === 'done') {
+      const { data: orderParts } = await supabase
+        .from('production_parts')
+        .select('id, current_station')
+        .eq('production_order_id', part.production_order_id);
+
+      if (orderParts) {
+        const total = orderParts.length;
+        const completed = orderParts.filter(p =>
+          p.id === part.id ? true : (p.current_station === 'packing' || p.current_station === 'done')
+        ).length;
+        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+        await supabase
+          .from('production_orders')
+          .update({ progress, updated_at: new Date().toISOString() })
+          .eq('id', part.production_order_id);
+      }
+    }
 
     setPart({ ...part, current_station: station });
     setSuccess(true);

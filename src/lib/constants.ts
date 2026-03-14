@@ -172,7 +172,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
     ]},
     { label: 'Inventory', i18nKey: 'nav.group_inventory', items: [
       { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-      { label: 'Import Materials', href: '/stock/import', icon: 'Upload', i18nKey: 'nav.stock_import' },
+
       { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
       { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
     ]},
@@ -245,7 +245,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
     ]},
     { label: 'Inventory', i18nKey: 'nav.group_inventory', items: [
       { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-      { label: 'Import Materials', href: '/stock/import', icon: 'Upload', i18nKey: 'nav.stock_import' },
+
       { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
       { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
     ]},
@@ -315,7 +315,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
     ]},
     { label: 'Inventory', i18nKey: 'nav.group_inventory', items: [
       { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-      { label: 'Import Materials', href: '/stock/import', icon: 'Upload', i18nKey: 'nav.stock_import' },
+
       { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
       { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
     ]},

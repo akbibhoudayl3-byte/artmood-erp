@@ -77,7 +77,7 @@ export default function DocumentsPage() {
     return (
       doc.title.toLowerCase().includes(s) ||
       doc.original_filename?.toLowerCase().includes(s) ||
-      doc.tags.some(tag => tag.includes(s)) ||
+      doc.tags.some(tag => tag.toLowerCase().includes(s)) ||
       doc.ocr_text?.toLowerCase().includes(s)
     );
   });
@@ -105,6 +105,7 @@ export default function DocumentsPage() {
   const deleteDocument = async (docId: string) => {
     const doc = documents.find(d => d.id === docId);
     if (!doc) return;
+    if (!confirm('Delete this document? This action cannot be undone.')) return;
 
     // Delete from storage
     await supabase.storage.from('scanned-documents').remove([doc.storage_path]);

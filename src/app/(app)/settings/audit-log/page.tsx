@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useLocale } from '@/lib/hooks/useLocale';
 import Card, { CardContent } from '@/components/ui/Card';
 import { RoleGuard } from '@/components/auth/RoleGuard';
-import { Shield, User, Clock, Database, Search } from 'lucide-react';
+import { Shield, User, Clock, Database, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface AuditEntry {
   id: string;
@@ -31,6 +31,8 @@ const ACTION_COLORS: Record<string, string> = {
   view_sensitive: 'bg-pink-100 text-pink-700',
 };
 
+const PAGE_SIZE = 50;
+
 export default function AuditLogPage() {
   const { t } = useLocale();
   const supabase = createClient();
@@ -38,20 +40,33 @@ export default function AuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterAction, setFilterAction] = useState('all');
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
-  useEffect(() => { loadAuditLog(); }, []);
+  useEffect(() => { loadAuditLog(); }, [page]);
 
   async function loadAuditLog() {
-    const { data } = await supabase
-      .from('audit_log')
-      .select('*, profile:profiles!audit_log_user_id_fkey(full_name, role)')
-      .order('created_at', { ascending: false })
-      .limit(500);
+    setLoading(true);
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const [{ data }, { count }] = await Promise.all([
+      supabase
+        .from('audit_log')
+        .select('*, profile:profiles!audit_log_user_id_fkey(full_name, role)')
+        .order('created_at', { ascending: false })
+        .range(from, to),
+      supabase
+        .from('audit_log')
+        .select('*', { count: 'exact', head: true }),
+    ]);
     setEntries((data as AuditEntry[]) || []);
+    setTotalCount(count ?? 0);
     setLoading(false);
   }
 
   const actions = ['all', ...Array.from(new Set(entries.map(e => e.action)))];
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   const filtered = entries.filter(e => {
     const matchSearch = !search ||
@@ -62,7 +77,7 @@ export default function AuditLogPage() {
     return matchSearch && matchAction;
   });
 
-  if (loading) return <div className="space-y-2">{[...Array(8)].map((_, i) => <div key={i} className="h-14 skeleton rounded-xl" />)}</div>;
+  if (loading && entries.length === 0) return <div className="space-y-2">{[...Array(8)].map((_, i) => <div key={i} className="h-14 skeleton rounded-xl" />)}</div>;
 
   return (
     <RoleGuard allowedRoles={['ceo'] as any[]}>
@@ -71,7 +86,7 @@ export default function AuditLogPage() {
           <h1 className="text-2xl font-bold text-[#1a1a2e] flex items-center gap-2">
             <Shield size={22} className="text-[#C9956B]" /> Audit Log
           </h1>
-          <p className="text-sm text-[#64648B]">{entries.length} events tracked</p>
+          <p className="text-sm text-[#64648B]">{totalCount} events tracked</p>
         </div>
 
         {/* Filters */}
@@ -141,6 +156,31 @@ export default function AuditLogPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-[#F0EDE8]">
+              <p className="text-xs text-[#64648B]">
+                Page {page + 1} of {totalPages} ({totalCount} total)
+              </p>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="p-1.5 rounded-lg hover:bg-[#F5F3F0] disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="p-1.5 rounded-lg hover:bg-[#F5F3F0] disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </RoleGuard>

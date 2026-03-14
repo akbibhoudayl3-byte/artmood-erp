@@ -1,8 +1,8 @@
 
 // ArtMood Factory OS - Service Worker v1.0
-const CACHE_NAME = 'artmood-v3';
-const STATIC_CACHE = 'artmood-static-v2';
-const DATA_CACHE = 'artmood-data-v2';
+const CACHE_NAME = 'artmood-v4';
+const STATIC_CACHE = 'artmood-static-v3';
+const DATA_CACHE = 'artmood-data-v3';
 
 // Static assets to precache
 const PRECACHE_URLS = [

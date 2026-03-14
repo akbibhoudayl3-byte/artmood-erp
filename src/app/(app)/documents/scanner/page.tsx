@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -51,15 +51,15 @@ export default function DocumentScannerPage() {
   const [sheets, setSheets] = useState<Array<{ id: string; sheet_number: string }>>([]);
 
   // Load projects and sheets on mount
-  useState(() => {
+  useEffect(() => {
     async function load() {
-      const { data: p } = await supabase.from('projects').select('id, name').order('created_at', { ascending: false }).limit(50);
-      if (p) setProjects(p);
+      const { data: p } = await supabase.from('projects').select('id, client_name, reference_code').order('created_at', { ascending: false }).limit(50);
+      if (p) setProjects(p.map(proj => ({ id: proj.id, name: `${proj.client_name} · ${proj.reference_code}` })));
       const { data: s } = await supabase.from('production_sheets').select('id, sheet_number').order('created_at', { ascending: false }).limit(50);
       if (s) setSheets(s);
     }
     load();
-  });
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

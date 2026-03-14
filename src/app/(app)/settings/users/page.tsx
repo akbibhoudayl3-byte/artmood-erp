@@ -159,6 +159,8 @@ export default function UsersPage() {
   }
 
   async function toggleActive(user: Profile) {
+    const action = user.is_active ? 'deactivate' : 'activate';
+    if (!confirm(`Are you sure you want to ${action} ${user.full_name}?`)) return;
     await supabase.from('profiles').update({
       is_active: !user.is_active,
       updated_at: new Date().toISOString(),

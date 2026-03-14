@@ -8,7 +8,7 @@ import Card, { CardHeader, CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Select, Textarea } from '@/components/ui/Input';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -18,6 +18,7 @@ export default function NewProjectPage() {
   const supabase = createClient();
   const { t } = useLocale();
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const [form, setForm] = useState({
     client_name: '',
@@ -44,8 +45,8 @@ export default function NewProjectPage() {
       client_name: form.client_name,
       client_phone: form.client_phone,
       client_email: form.client_email || null,
-      address: form.address || null,
-      city: form.city || null,
+      client_address: form.address || null,
+      client_city: form.city || null,
       project_type: form.project_type,
       priority: form.priority,
       total_amount: form.total_amount ? parseFloat(form.total_amount) : 0,
@@ -53,6 +54,12 @@ export default function NewProjectPage() {
       status: 'measurements',
       created_by: profile?.id,
     }).select('id').single();
+
+    if (error) {
+      setFormError('Failed to create project: ' + error.message);
+      setLoading(false);
+      return;
+    }
 
     if (data) {
       router.push(`/projects/${data.id}`);
@@ -70,6 +77,12 @@ export default function NewProjectPage() {
         </button>
         <h1 className="text-xl font-bold text-gray-900">{t('projects.new_project')}</h1>
       </div>
+
+      {formError && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+          <AlertCircle size={16} /> {formError}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <Card>

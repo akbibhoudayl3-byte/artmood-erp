@@ -528,7 +528,7 @@ export default function HRLeavesPage() {
   const supabase = createClient();
   const { profile } = useAuth();
 
-  const isAdmin = profile?.role === 'hr_manager';
+  const isAdmin = profile?.role === 'hr_manager' || profile?.role === 'ceo';
 
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);

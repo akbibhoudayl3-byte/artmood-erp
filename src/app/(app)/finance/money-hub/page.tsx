@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -44,13 +44,27 @@ export default function MoneyHubPage() {
     title: '', amount: '', due_date: '', description: '',
   });
 
+  const [projects, setProjects] = useState<{ id: string; client_name: string; reference_code: string }[]>([]);
+
+  // Load projects for dropdown
+  useEffect(() => {
+    supabase.from('projects')
+      .select('id, client_name, reference_code')
+      .in('status', ['measurements', 'design', 'client_validation', 'production', 'installation'])
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setProjects(data || []));
+  }, []);
+
   const allCategories = EXPENSE_CATEGORIES.flatMap(g => g.items.map(i => ({ value: i.key, label: i.label })));
 
   async function submitExpense(e: React.FormEvent) {
     e.preventDefault();
+    if (!expense.amount) return;
     setLoading(true);
-    await supabase.from('expenses').insert({
-      amount: parseFloat(expense.amount),
+
+    const parsedAmount = parseFloat(expense.amount);
+    const { data: expData, error: expErr } = await supabase.from('expenses').insert({
+      amount: parsedAmount,
       category: expense.category,
       payment_method: expense.payment_method,
       date: expense.date,
@@ -58,7 +72,27 @@ export default function MoneyHubPage() {
       project_id: expense.project_id || null,
       receipt_url: expense.receipt_url || null,
       created_by: profile?.id,
+    }).select('id').single();
+
+    if (expErr) {
+      alert('Error: ' + expErr.message);
+      setLoading(false);
+      return;
+    }
+
+    // Create ledger entry
+    await supabase.from('ledger').insert({
+      date: expense.date,
+      type: 'expense',
+      category: expense.category,
+      amount: parsedAmount,
+      description: expense.description || null,
+      source_module: 'money-hub',
+      source_id: expData?.id,
+      payment_method: expense.payment_method,
+      created_by: profile?.id,
     });
+
     setLoading(false);
     showSuccess();
     setExpense({ amount: '', category: 'other', payment_method: 'cash', date: new Date().toISOString().split('T')[0], description: '', project_id: '', receipt_url: '' });
@@ -66,16 +100,58 @@ export default function MoneyHubPage() {
 
   async function submitPayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!payment.project_id) return;
+    if (!payment.project_id || !payment.amount) return;
     setLoading(true);
-    await supabase.from('payments').insert({
-      amount: parseFloat(payment.amount),
+
+    const parsedAmount = parseFloat(payment.amount);
+    const { data: paymentData, error: payErr } = await supabase.from('payments').insert({
+      amount: parsedAmount,
       project_id: payment.project_id,
       payment_type: payment.payment_type,
       payment_method: payment.payment_method,
       notes: payment.notes || null,
       received_by: profile?.id,
+    }).select('id').single();
+
+    if (payErr) {
+      alert('Error: ' + payErr.message);
+      setLoading(false);
+      return;
+    }
+
+    // Update project paid_amount
+    const { data: project } = await supabase
+      .from('projects')
+      .select('paid_amount, total_amount')
+      .eq('id', payment.project_id)
+      .single();
+
+    if (project) {
+      const newPaid = (project.paid_amount || 0) + parsedAmount;
+      const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
+      await supabase.from('projects').update({
+        paid_amount: newPaid,
+        deposit_paid: pct >= 0.5,
+        pre_install_paid: pct >= 0.9,
+        final_paid: pct >= 1.0,
+        updated_at: new Date().toISOString(),
+      }).eq('id', payment.project_id);
+    }
+
+    // Create ledger entry
+    await supabase.from('ledger').insert({
+      date: new Date().toISOString(),
+      type: 'income',
+      category: payment.payment_type,
+      amount: parsedAmount,
+      description: payment.notes || 'Payment received',
+      project_id: payment.project_id,
+      source_module: 'money-hub',
+      source_id: paymentData?.id,
+      payment_method: payment.payment_method,
+      created_by: profile?.id,
     });
+
     setLoading(false);
     showSuccess();
     setPayment({ amount: '', project_id: '', payment_type: 'deposit', payment_method: 'cash', notes: '' });
@@ -178,8 +254,12 @@ export default function MoneyHubPage() {
               <Input label={`${t('finance.amount')} *`} type="number" placeholder="0.00" value={payment.amount}
                 onChange={(e) => setPayment({ ...payment, amount: e.target.value })} required />
 
-              <Input label="Project ID *" placeholder="Select or paste project ID" value={payment.project_id}
-                onChange={(e) => setPayment({ ...payment, project_id: e.target.value })} required />
+              <Select label={`${t('common.project')} *`} value={payment.project_id}
+                onChange={(e) => setPayment({ ...payment, project_id: e.target.value })}
+                options={[
+                  { value: '', label: '-- Select project --' },
+                  ...projects.map(p => ({ value: p.id, label: `${p.client_name} · ${p.reference_code}` })),
+                ]} />
 
               <Select label={t('common.type')} value={payment.payment_type}
                 onChange={(e) => setPayment({ ...payment, payment_type: e.target.value })}

@@ -14,6 +14,7 @@ import {
   Plus, X, Receipt, TrendingDown, Filter,
   Pencil, Trash2, CheckCircle, AlertCircle,
 } from 'lucide-react';
+import { createLedgerEntry } from '@/lib/helpers/ledger';
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   'rent', 'internet', 'phones', 'insurance', 'software', 'subscriptions', 'utilities',
@@ -196,17 +197,31 @@ export default function ExpensesPage() {
       showSuccess('Expense updated successfully.');
     } else {
       // INSERT
-      const { error } = await supabase.from('expenses').insert({
+      const { data: newExpense, error } = await supabase.from('expenses').insert({
         ...payload,
         created_by: profile?.id,
         is_recurring: false,
-      });
+      }).select('id').single();
 
       if (error) {
         setFormError(error.message || 'Failed to save expense.');
         setSaving(false);
         return;
       }
+
+      // Create ledger entry
+      await createLedgerEntry({
+        date: payload.date,
+        type: 'expense',
+        category: payload.category,
+        amount: payload.amount,
+        description: payload.description,
+        source_module: 'expenses',
+        source_id: newExpense?.id,
+        payment_method: payload.payment_method,
+        created_by: profile?.id || null,
+      });
+
       showSuccess('Expense saved successfully.');
     }
 

@@ -14,7 +14,7 @@
  *   After:  1 RPC      + 3 CEO + 3 Finance = up to 7 queries     (~300ms)
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
@@ -256,19 +256,19 @@ export default function DashboardPage() {
   }, [loadDashboard]);
 
   // Debounced realtime: 3-second cooldown to avoid spamming on bulk inserts
-  const realtimeRef = { timer: null as ReturnType<typeof setTimeout> | null };
+  const realtimeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useRealtimeMulti([
     { table: 'projects', callback: () => {
-      if (realtimeRef.timer) clearTimeout(realtimeRef.timer);
-      realtimeRef.timer = setTimeout(() => loadDashboard(), 3000);
+      if (realtimeRef.current) clearTimeout(realtimeRef.current);
+      realtimeRef.current = setTimeout(() => loadDashboard(), 3000);
     }},
     { table: 'leads', callback: () => {
-      if (realtimeRef.timer) clearTimeout(realtimeRef.timer);
-      realtimeRef.timer = setTimeout(() => loadDashboard(), 3000);
+      if (realtimeRef.current) clearTimeout(realtimeRef.current);
+      realtimeRef.current = setTimeout(() => loadDashboard(), 3000);
     }},
     { table: 'payments', callback: () => {
-      if (realtimeRef.timer) clearTimeout(realtimeRef.timer);
-      realtimeRef.timer = setTimeout(() => loadDashboard(), 3000);
+      if (realtimeRef.current) clearTimeout(realtimeRef.current);
+      realtimeRef.current = setTimeout(() => loadDashboard(), 3000);
     }},
   ]);
 
@@ -494,7 +494,7 @@ export default function DashboardPage() {
           <Card className="p-4 text-center">
             <AlertTriangle size={20} className={stats.overduePayments > 0 ? 'text-red-500 mx-auto' : 'text-[#64648B] mx-auto'} />
             <p className="text-xl font-bold text-[#1a1a2e] dark:text-white mt-1">{stats.overduePayments}</p>
-            <p className="text-[11px] text-[#64648B]">{t('dash.overdue_payments')}</p>
+            <p className="text-[11px] text-[#64648B]">{t('dash.awaiting_deposit') || 'Awaiting Deposit'}</p>
           </Card>
         </div>
 

@@ -10,7 +10,8 @@ import { useLocale } from '@/lib/hooks/useLocale';
 import { useAuth } from '@/lib/hooks/useAuth';
 import type { PaymentType, PaymentMethod } from '@/types/database';
 import { RoleGuard } from '@/components/auth/RoleGuard';
-import { Plus, X, Banknote, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, X, Banknote, TrendingUp, AlertCircle, CheckCircle, Pencil, Trash2 } from 'lucide-react';
+import { createLedgerEntry } from '@/lib/helpers/ledger';
 
 const PAYMENT_TYPES: PaymentType[] = ['deposit', 'pre_installation', 'final', 'other'];
 const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'cheque', 'bank_transfer', 'card', 'other'];
@@ -41,6 +42,9 @@ export default function PaymentsPage() {
   const [formError, setFormError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loadError, setLoadError] = useState('');
+
+  const [editingPayment, setEditingPayment] = useState<PaymentWithProject | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // Form state
   const [projectId, setProjectId] = useState('');
@@ -89,6 +93,56 @@ export default function PaymentsPage() {
     setReceivedAt(new Date().toISOString().split('T')[0]);
     setFormError('');
     setShowForm(false);
+    setEditingPayment(null);
+  }
+
+  function openEdit(p: PaymentWithProject) {
+    setEditingPayment(p);
+    setProjectId(p.project_id);
+    setAmount(String(p.amount));
+    setPaymentType(p.payment_type);
+    setPaymentMethod(p.payment_method || 'cash');
+    setReceivedAt(p.received_at ? p.received_at.split('T')[0] : new Date().toISOString().split('T')[0]);
+    setReferenceNumber(p.reference_number || '');
+    setNotes(p.notes || '');
+    setFormError('');
+    setShowForm(true);
+  }
+
+  async function handleDelete(paymentId: string, pProjectId: string, pAmount: number) {
+    if (!window.confirm('Delete this payment? This will also update the project total.')) return;
+    setDeleting(paymentId);
+
+    const { error } = await supabase.from('payments').delete().eq('id', paymentId);
+    if (error) {
+      setSuccessMsg('');
+      setLoadError('Failed to delete: ' + error.message);
+      setDeleting(null);
+      return;
+    }
+
+    // Update project paid_amount (subtract)
+    const { data: project } = await supabase
+      .from('projects')
+      .select('paid_amount, total_amount')
+      .eq('id', pProjectId)
+      .single();
+    if (project) {
+      const newPaid = Math.max(0, (project.paid_amount || 0) - pAmount);
+      const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
+      await supabase.from('projects').update({
+        paid_amount: newPaid,
+        deposit_paid: pct >= 0.5,
+        pre_install_paid: pct >= 0.9,
+        final_paid: pct >= 1.0,
+        updated_at: new Date().toISOString(),
+      }).eq('id', pProjectId);
+    }
+
+    setDeleting(null);
+    setSuccessMsg('Payment deleted.');
+    setTimeout(() => setSuccessMsg(''), 3000);
+    loadPayments();
   }
 
   async function handleSave() {
@@ -110,7 +164,71 @@ export default function PaymentsPage() {
     setSaving(true);
     setFormError('');
 
-    // Insert payment
+    if (editingPayment) {
+      // UPDATE existing payment
+      const oldAmount = editingPayment.amount;
+      const { error: updateErr } = await supabase.from('payments').update({
+        project_id: projectId,
+        amount: parsedAmount,
+        payment_type: paymentType,
+        payment_method: paymentMethod,
+        received_at: new Date(receivedAt).toISOString(),
+        reference_number: referenceNumber || null,
+        notes: notes || null,
+      }).eq('id', editingPayment.id);
+
+      if (updateErr) {
+        setFormError('Failed to update: ' + updateErr.message);
+        setSaving(false);
+        return;
+      }
+
+      // Adjust project paid_amount if amount changed
+      if (parsedAmount !== oldAmount || projectId !== editingPayment.project_id) {
+        // Subtract old amount from old project
+        const { data: oldProject } = await supabase
+          .from('projects')
+          .select('paid_amount, total_amount')
+          .eq('id', editingPayment.project_id)
+          .single();
+        if (oldProject) {
+          const oldPaid = Math.max(0, (oldProject.paid_amount || 0) - oldAmount);
+          const oldPct = oldProject.total_amount > 0 ? oldPaid / oldProject.total_amount : 0;
+          await supabase.from('projects').update({
+            paid_amount: oldPaid,
+            deposit_paid: oldPct >= 0.5,
+            pre_install_paid: oldPct >= 0.9,
+            final_paid: oldPct >= 1.0,
+          }).eq('id', editingPayment.project_id);
+        }
+        // Add new amount to new project
+        const { data: newProject } = await supabase
+          .from('projects')
+          .select('paid_amount, total_amount')
+          .eq('id', projectId)
+          .single();
+        if (newProject) {
+          const newPaid = (newProject.paid_amount || 0) + parsedAmount;
+          const newPct = newProject.total_amount > 0 ? newPaid / newProject.total_amount : 0;
+          await supabase.from('projects').update({
+            paid_amount: newPaid,
+            deposit_paid: newPct >= 0.5,
+            pre_install_paid: newPct >= 0.9,
+            final_paid: newPct >= 1.0,
+          }).eq('id', projectId);
+        }
+      }
+
+      setEditingPayment(null);
+      resetForm();
+      setSaving(false);
+      setSuccessMsg('Payment updated successfully.');
+      setTimeout(() => setSuccessMsg(''), 4000);
+      loadPayments();
+      return;
+    }
+
+    // INSERT new payment
     const { data: payment, error: insertErr } = await supabase.from('payments').insert({
       project_id: projectId,
       amount: parsedAmount,
@@ -140,13 +258,28 @@ export default function PaymentsPage() {
       const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
       await supabase.from('projects').update({
         paid_amount: newPaid,
-        deposit_paid: pct >= 0.5 ? true : undefined,
-        pre_install_paid: pct >= 0.9 ? true : undefined,
-        final_paid: pct >= 1.0 ? true : undefined,
+        deposit_paid: pct >= 0.5,
+        pre_install_paid: pct >= 0.9,
+        final_paid: pct >= 1.0,
         updated_at: new Date().toISOString(),
       }).eq('id', projectId);
     }
 
+    // Create ledger entry for income
+    await createLedgerEntry({
+      date: new Date(receivedAt).toISOString(),
+      type: 'income',
+      category: paymentType,
+      amount: parsedAmount,
+      description: `Payment from ${projects.find(p => p.id === projectId)?.client_name || 'client'}`,
+      project_id: projectId,
+      source_module: 'payments',
+      source_id: payment?.id,
+      payment_method: paymentMethod,
+      created_by: profile?.id || null,
+    });
+
+    setEditingPayment(null);
     resetForm();
     setSaving(false);
     setSuccessMsg('Payment recorded successfully.');
@@ -231,12 +364,13 @@ export default function PaymentsPage() {
                   <th className="text-left px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">Type</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">{t('finance.payment_method')}</th>
                   <th className="text-right px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">{t('common.amount')}</th>
+                  <th className="text-center px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0EDE8]">
                 {payments.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-5 py-12 text-center text-[#64648B]">
+                    <td colSpan={6} className="px-5 py-12 text-center text-[#64648B]">
                       <Banknote size={32} className="mx-auto mb-2 opacity-30" />
                       <p>{t('common.no_results') || 'No payments found'}</p>
                     </td>
@@ -256,6 +390,21 @@ export default function PaymentsPage() {
                     <td className="px-5 py-3.5 text-[#64648B] text-xs">{p.payment_method || '—'}</td>
                     <td className="px-5 py-3.5 text-right font-semibold text-emerald-600">
                       +{fmtAmount(Number(p.amount))}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openEdit(p)} className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id, p.project_id, Number(p.amount))}
+                          disabled={deleting === p.id}
+                          className="p-1.5 rounded text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -281,9 +430,24 @@ export default function PaymentsPage() {
                     {new Date(p.received_at).toLocaleDateString('fr-MA', { weekday: 'short', day: 'numeric', month: 'short' })}
                   </p>
                 </div>
-                <p className="font-bold text-emerald-600 text-sm ml-3 shrink-0">
-                  +{fmtAmount(Number(p.amount))}
-                </p>
+                <div className="flex flex-col items-end gap-1 shrink-0 ml-3">
+                  <p className="font-bold text-emerald-600 text-sm">
+                    +{fmtAmount(Number(p.amount))}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEdit(p)} className="p-1 rounded text-blue-600 hover:bg-blue-50" title="Edit">
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p.id, p.project_id, Number(p.amount))}
+                      disabled={deleting === p.id}
+                      className="p-1 rounded text-red-500 hover:bg-red-50 disabled:opacity-40"
+                      title="Delete"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </Card>
           ))}
@@ -306,7 +470,7 @@ export default function PaymentsPage() {
           <div className="relative w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-[#1a1a2e]">
-                {t('finance.add_payment') || 'Add Payment'}
+                {editingPayment ? 'Edit Payment' : (t('finance.add_payment') || 'Add Payment')}
               </h2>
               <button
                 onClick={resetForm}
@@ -427,7 +591,7 @@ export default function PaymentsPage() {
                 onClick={handleSave}
                 disabled={saving || !amount || !projectId}
               >
-                {saving ? (t('common.saving') || 'Saving...') : (t('common.save') || 'Save')}
+                {saving ? (t('common.saving') || 'Saving...') : editingPayment ? 'Update' : (t('common.save') || 'Save')}
               </Button>
             </div>
           </div>

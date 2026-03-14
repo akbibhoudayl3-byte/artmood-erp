@@ -27,7 +27,7 @@ export default function StockReservationsPage() {
   async function loadReservations() {
     const { data } = await supabase
       .from('stock_reservations')
-      .select('*, stock_item:stock_items(item_name, sku, unit), sheet:production_sheets(sheet_number), reserver:profiles!stock_reservations_reserved_by_fkey(full_name)')
+      .select('*, stock_item:stock_items(name, sku, unit), sheet:production_sheets(sheet_number), reserver:profiles!stock_reservations_reserved_by_fkey(full_name)')
       .order('reserved_at', { ascending: false });
     setReservations((data as StockReservation[]) || []);
     setLoading(false);
@@ -87,7 +87,7 @@ export default function StockReservationsPage() {
                    <Unlock size={18} className="text-gray-400" />}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-[#1a1a2e]">{(res.stock_item as any)?.item_name}</p>
+                  <p className="text-sm font-semibold text-[#1a1a2e]">{(res.stock_item as any)?.name}</p>
                   <p className="text-xs text-[#64648B]">{(res.sheet as any)?.sheet_number} - {res.quantity} {(res.stock_item as any)?.unit}</p>
                 </div>
               </div>

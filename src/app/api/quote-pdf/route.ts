@@ -3,6 +3,12 @@ import { requireRole, isValidUUID } from '@/lib/auth/server';
 import { writeAuditLog } from '@/lib/security/audit';
 import { createServerSupabase } from '@/lib/supabase/server';
 
+/** Escape HTML to prevent XSS */
+function esc(str: string | null | undefined): string {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 export async function GET(request: NextRequest) {
   try {
     // ── RBAC: only ceo, commercial_manager, and designer can view/print quotes ──
@@ -56,7 +62,7 @@ export async function GET(request: NextRequest) {
 function generateQuoteHtml(quote: any, lines: any[], project: any): string {
   const lineRows = lines.map(line => `
     <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0ede8;color:#1a1a2e;">${line.description}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f0ede8;color:#1a1a2e;">${esc(line.description)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0ede8;text-align:center;color:#64648B;">${line.quantity}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0ede8;text-align:center;color:#64648B;">${line.unit}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0ede8;text-align:right;color:#64648B;">${Number(line.unit_price).toLocaleString('fr-MA')} MAD</td>
@@ -83,7 +89,7 @@ function generateQuoteHtml(quote: any, lines: any[], project: any): string {
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>Devis ${project?.reference_code || ''} - ArtMood</title>
+  <title>Devis ${esc(project?.reference_code) || ''} - ArtMood</title>
   <style>
     @media print {
       body { margin: 0; }
@@ -130,7 +136,7 @@ function generateQuoteHtml(quote: any, lines: any[], project: any): string {
       </div>
       <div class="quote-info">
         <h2>DEVIS</h2>
-        <p><strong>N°:</strong> ${project?.reference_code || 'N/A'}-v${quote.version}</p>
+        <p><strong>N°:</strong> ${esc(project?.reference_code) || 'N/A'}-v${quote.version}</p>
         <p><strong>Date:</strong> ${createdDate}</p>
         ${validUntil ? `<p><strong>Valide jusqu'au:</strong> ${validUntil}</p>` : ''}
       </div>
@@ -138,10 +144,10 @@ function generateQuoteHtml(quote: any, lines: any[], project: any): string {
 
     <div class="client-section">
       <h3>Client</h3>
-      <p class="name">${project?.client_name || 'N/A'}</p>
-      ${project?.client_phone ? `<p>Tél: ${project.client_phone}</p>` : ''}
-      ${project?.client_email ? `<p>Email: ${project.client_email}</p>` : ''}
-      ${project?.client_address ? `<p>${project.client_address}${project.client_city ? `, ${project.client_city}` : ''}</p>` : ''}
+      <p class="name">${esc(project?.client_name) || 'N/A'}</p>
+      ${project?.client_phone ? `<p>Tél: ${esc(project.client_phone)}</p>` : ''}
+      ${project?.client_email ? `<p>Email: ${esc(project.client_email)}</p>` : ''}
+      ${project?.client_address ? `<p>${esc(project.client_address)}${project.client_city ? `, ${esc(project.client_city)}` : ''}</p>` : ''}
     </div>
 
     <table>
@@ -176,7 +182,7 @@ function generateQuoteHtml(quote: any, lines: any[], project: any): string {
     ${quote.notes ? `
     <div class="notes">
       <h4>Notes</h4>
-      <p>${quote.notes}</p>
+      <p>${esc(quote.notes)}</p>
     </div>
     ` : ''}
 

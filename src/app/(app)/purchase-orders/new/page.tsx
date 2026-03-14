@@ -67,39 +67,42 @@ export default function NewPurchaseOrderPage() {
       return;
     }
     const hasInvalidLine = lines.some(
-      (l: any) => !l.description?.trim() || !l.quantity || Number(l.quantity) <= 0
+      (l) => !l.item_name?.trim() || !l.quantity || Number(l.quantity) <= 0
     );
     if (hasInvalidLine) {
-      setFormError("Tous les articles doivent avoir une description et une quantité > 0.");
+      setFormError("Tous les articles doivent avoir un nom et une quantité > 0.");
       return;
     }
-    // ─────────────────────────────────────────────────────────────
-    if (!supplierId || lines.some(l => !l.item_name.trim() || !l.unit_price)) return;
     setSaving(true);
-    // ── PATCHED: capture DB errors ───────────────────────────────
-    // Replace the existing supabase.insert calls below with error-capturing versions:
-    // const { data: po, error: poErr } = await supabase.from('purchase_orders').insert({...}).select('id').single();
-    // if (poErr) { setFormError('Erreur création BdC: ' + poErr.message); setSaving(false); return; }
-    // ─────────────────────────────────────────────────────────────
 
-    const { data: po } = await supabase.from('purchase_orders').insert({
+    const { data: po, error: poErr } = await supabase.from('purchase_orders').insert({
       supplier_id: supplierId,
       total_amount: total,
       notes: notes || null,
       created_by: profile?.id,
-    }).select().single();
+    }).select('id').single();
 
-    if (po) {
-      const poLines = lines.map((l, i) => ({
-        purchase_order_id: po.id,
-        item_name: l.item_name.trim(),
-        quantity: parseFloat(l.quantity) || 1,
-        unit: l.unit || 'unit',
-        unit_price: parseFloat(l.unit_price) || 0,
-        total_price: (parseFloat(l.quantity) || 1) * (parseFloat(l.unit_price) || 0),
-        sort_order: i,
-      }));
-      await supabase.from('purchase_order_lines').insert(poLines);
+    if (poErr || !po) {
+      setFormError('Erreur création bon de commande: ' + (poErr?.message || 'Unknown error'));
+      setSaving(false);
+      return;
+    }
+
+    const poLines = lines.map((l, i) => ({
+      purchase_order_id: po.id,
+      item_name: l.item_name.trim(),
+      quantity: parseFloat(l.quantity) || 1,
+      unit: l.unit || 'unit',
+      unit_price: parseFloat(l.unit_price) || 0,
+      total_price: (parseFloat(l.quantity) || 1) * (parseFloat(l.unit_price) || 0),
+      sort_order: i,
+    }));
+
+    const { error: linesErr } = await supabase.from('purchase_order_lines').insert(poLines);
+    if (linesErr) {
+      setFormError('Bon créé mais erreur lignes: ' + linesErr.message);
+      setSaving(false);
+      return;
     }
 
     router.push('/purchase-orders');
@@ -114,6 +117,12 @@ export default function NewPurchaseOrderPage() {
         </button>
         <h1 className="text-xl font-bold text-[#1a1a2e]">{t('po.new_order')}</h1>
       </div>
+
+      {formError && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+          <AlertCircle size={16} /> {formError}
+        </div>
+      )}
 
       <Card>
         <CardContent>

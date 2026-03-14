@@ -32,20 +32,37 @@ export default function SettingsPage() {
     localStorage.setItem('theme', newMode ? 'dark' : 'light');
   }
   const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [phone, setPhone] = useState(profile?.phone || '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
 
+  // Sync state when profile loads asynchronously
+  useEffect(() => {
+    if (profile) {
+      setFullName(prev => prev || profile.full_name || '');
+      setPhone(prev => prev || profile.phone || '');
+      setAvatarUrl(prev => prev || profile.avatar_url || '');
+    }
+  }, [profile]);
+
   async function updateProfile() {
     if (!profile) return;
     setSaving(true);
-    await supabase.from('profiles').update({
+    setSaveMsg('');
+    const { error } = await supabase.from('profiles').update({
       full_name: fullName,
       phone: phone,
       avatar_url: avatarUrl || null,
       updated_at: new Date().toISOString(),
     }).eq('id', profile.id);
     setSaving(false);
+    if (error) {
+      setSaveMsg('Error: ' + error.message);
+    } else {
+      setSaveMsg('Profile saved successfully');
+      setTimeout(() => setSaveMsg(''), 3000);
+    }
   }
 
   return (
@@ -88,6 +105,11 @@ export default function SettingsPage() {
             </p>
           </div>
           <Button onClick={updateProfile} loading={saving}>{t('common.save')}</Button>
+          {saveMsg && (
+            <p className={`text-sm mt-1 ${saveMsg.startsWith('Error') ? 'text-red-600' : 'text-emerald-600'}`}>
+              {saveMsg}
+            </p>
+          )}
         </CardContent>
       </Card>
 

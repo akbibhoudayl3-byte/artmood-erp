@@ -5,6 +5,12 @@ import { cookies } from 'next/headers';
 import { requireRole, isValidUUID } from '@/lib/auth/server';
 import { writeAuditLog } from '@/lib/security/audit';
 
+/** Escape HTML to prevent XSS */
+function esc(str: string | null | undefined): string {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 export async function GET(request: NextRequest) {
   // ── Auth + role ──────────────────────────────────────────────────────────
   const auth = await requireRole(['ceo', 'commercial_manager']);
@@ -48,8 +54,8 @@ export async function GET(request: NextRequest) {
   const paymentRows = payments.map((p: any) => `
     <tr>
       <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;">${new Date(p.received_at).toLocaleDateString('fr-FR')}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;">${p.payment_type}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;">${p.payment_method || '-'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;">${esc(p.payment_type)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;">${esc(p.payment_method) || '-'}</td>
       <td style="text-align:right;padding:8px 12px;border-bottom:1px solid #f0ede8;font-weight:600;color:#16a34a;">+${Number(p.amount).toLocaleString('fr-MA')} MAD</td>
     </tr>
   `).join('');
@@ -58,7 +64,7 @@ export async function GET(request: NextRequest) {
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Bon de Livraison — ${project.reference_code}</title>
+  <title>Bon de Livraison — ${esc(project.reference_code)}</title>
   <style>
     body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; margin: 0; padding: 40px; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
@@ -80,7 +86,7 @@ export async function GET(request: NextRequest) {
       <div class="doc-title">Bon de Livraison</div>
     </div>
     <div style="text-align:right;">
-      <h1>${project.reference_code}</h1>
+      <h1>${esc(project.reference_code)}</h1>
       <p style="margin:2px 0;color:#64648B;">${new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' })}</p>
     </div>
   </div>
@@ -90,9 +96,9 @@ export async function GET(request: NextRequest) {
       <th>Client</th><th>Adresse</th><th>Téléphone</th>
     </tr>
     <tr>
-      <td style="padding:10px 12px;font-weight:600">${project.client_name}</td>
-      <td style="padding:10px 12px;color:#64648B">${project.address || '—'}</td>
-      <td style="padding:10px 12px;color:#64648B">${project.phone || '—'}</td>
+      <td style="padding:10px 12px;font-weight:600">${esc(project.client_name)}</td>
+      <td style="padding:10px 12px;color:#64648B">${esc(project.address) || '—'}</td>
+      <td style="padding:10px 12px;color:#64648B">${esc(project.phone) || '—'}</td>
     </tr>
   </table>
 

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────
-interface Sheet { id: string; sheet_number: string; project?: { reference_code: string; client_name: string } }
+interface Sheet { id: string; sheet_number: string; project?: { id: string; reference_code: string; client_name: string } }
 interface Panel {
   id: string; panel_name: string; length: number; width: number; quantity: number;
   material: string; edge_top: boolean; edge_bottom: boolean; edge_left: boolean; edge_right: boolean;
@@ -73,7 +73,7 @@ export default function CuttingPage() {
   useEffect(() => {
     supabase
       .from('production_sheets')
-      .select('id, sheet_number, project:projects(reference_code, client_name)')
+      .select('id, sheet_number, project:projects(id, reference_code, client_name)')
       .in('status', ['approved', 'in_production'])
       .order('created_at', { ascending: false })
       .limit(30)
@@ -122,7 +122,7 @@ export default function CuttingPage() {
 
   // ─── Mark panel as cut / edge-banded ───────────────────────
   async function markPanel(panelId: string, station: 'saw' | 'edge') {
-    await supabase.from('station_scans').insert({
+    await supabase.from('production_scans').insert({
       panel_id: panelId, station, scanned_by: profile?.id, scanned_at: new Date().toISOString(),
     });
     await supabase
@@ -165,7 +165,7 @@ export default function CuttingPage() {
     const selectedSheet = sheets.find(s => s.id === sheetId);
     await supabase.from('waste_records').insert({
       sheet_id: sheetId,
-      project_id: selectedSheet?.project ? null : null,
+      project_id: selectedSheet?.project?.id || null,
       material: wMaterial,
       length_mm: parseInt(wLength),
       width_mm: parseInt(wWidth),

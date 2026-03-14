@@ -32,11 +32,9 @@ export default function ProjectCostsPage() {
   const [costDescription, setCostDescription] = useState('');
   const [costAmount, setCostAmount] = useState('');
   const [costError, setCostError] = useState('');
-  // Aliases for backward compat
+  // Aliases for backward compat (used in UI form)
   const description = costDescription;
-  const setDescription = setCostDescription;
   const amount = costAmount;
-  const setAmount = setCostAmount;
 
   useEffect(() => { loadData(); }, [projectId]);
 
@@ -57,7 +55,6 @@ export default function ProjectCostsPage() {
   }
 
   async function addCost() {
-    // ── Validation ───────────────────────────────────────────────
     setCostError('');
     const parsedAmount = parseFloat(costAmount || '0');
     if (!costDescription?.trim()) {
@@ -68,21 +65,25 @@ export default function ProjectCostsPage() {
       setCostError("Le montant doit être supérieur à zéro.");
       return;
     }
-    // ─────────────────────────────────────────────────────────────
-    const amt = parseFloat(amount);
-    if (!amt || !description.trim()) return;
 
-    await supabase.from('project_costs').insert({
+    const { error: insertErr } = await supabase.from('project_costs').insert({
       project_id: projectId,
       cost_type: costType,
-      description: description.trim(),
-      amount: amt,
+      description: costDescription.trim(),
+      amount: parsedAmount,
       created_by: profile?.id,
     });
 
+    if (insertErr) {
+      setCostError('Failed to add cost: ' + insertErr.message);
+      return;
+    }
+
+    setCostSuccess('Cost added successfully');
+    setTimeout(() => setCostSuccess(''), 3000);
     setShowNew(false);
-    setDescription('');
-    setAmount('');
+    setCostDescription('');
+    setCostAmount('');
     loadData();
   }
 
@@ -223,8 +224,8 @@ export default function ProjectCostsPage() {
                   {COST_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
-              <Input label={t('common.description')} placeholder="e.g. Melamine boards 18mm" value={description} onChange={(e) => setDescription(e.target.value)} />
-              <Input label={`${t('common.amount')} (MAD)`} type="number" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input label={t('common.description')} placeholder="e.g. Melamine boards 18mm" value={description} onChange={(e) => setCostDescription(e.target.value)} />
+              <Input label={`${t('common.amount')} (MAD)`} type="number" placeholder="0" value={amount} onChange={(e) => setCostAmount(e.target.value)} />
               <Button fullWidth onClick={addCost}><DollarSign size={16} /> {t('costs.add_cost')}</Button>
             </div>
           </CardContent>

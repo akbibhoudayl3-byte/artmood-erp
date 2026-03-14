@@ -9,7 +9,7 @@ import Input from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Input';
 import Card, { CardContent } from '@/components/ui/Card';
 import { LEAD_SOURCES } from '@/lib/constants';
-import { ArrowLeft, Instagram, Globe, User, Users, Building2, MapPin } from 'lucide-react';
+import { ArrowLeft, Instagram, Globe, User, Users, Building2, MapPin, AlertCircle } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -30,6 +30,7 @@ export default function NewLeadPage() {
   const { profile } = useAuth();
   const { t } = useLocale();
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState('');
   const [form, setForm] = useState({
     full_name: '',
     phone: '',
@@ -56,7 +57,11 @@ export default function NewLeadPage() {
     });
 
     setLoading(false);
-    if (!error) router.push('/leads');
+    if (error) {
+      setFormError('Failed to create lead: ' + error.message);
+      return;
+    }
+    router.push('/leads');
   }
 
   return (
@@ -69,6 +74,12 @@ export default function NewLeadPage() {
         </button>
         <h1 className="text-xl font-bold text-gray-900">{t('common.add')}</h1>
       </div>
+
+      {formError && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+          <AlertCircle size={16} /> {formError}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <Card>

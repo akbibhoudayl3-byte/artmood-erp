@@ -160,5 +160,28 @@ export async function updateSession(request: NextRequest) {
   supabaseResponse.headers.set('X-XSS-Protection', '1; mode=block');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
 
+  // HSTS — force HTTPS for 1 year, include subdomains
+  supabaseResponse.headers.set(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains; preload'
+  );
+
+  // Content Security Policy — restrict resource loading
+  supabaseResponse.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",   // Next.js needs inline + eval in dev
+      "style-src 'self' 'unsafe-inline'",                   // Tailwind injects inline styles
+      `connect-src 'self' https://*.supabase.co wss://*.supabase.co`,  // Supabase API + Realtime
+      `img-src 'self' data: blob: https://*.supabase.co`,   // Supabase Storage images
+      "font-src 'self' data:",
+      "frame-ancestors 'none'",                              // Same as X-Frame-Options DENY
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; ')
+  );
+
   return supabaseResponse;
 }

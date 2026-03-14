@@ -12,9 +12,10 @@ import Input from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Input';
 import PhotoUpload from '@/components/ui/PhotoUpload';
 import type { InstallationPhoto } from '@/types/database';
+import { useInstallationGeogate } from '@/lib/hooks/useInstallationGeogate';
 import {
   ArrowLeft, MapPin, Phone, Clock, Navigation, Camera,
-  CheckCircle, AlertTriangle, User, Calendar, FileText
+  CheckCircle, AlertTriangle, User, Calendar, FileText, ShieldAlert
 } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -66,12 +67,14 @@ export default function InstallationDetailPage() {
   const supabase = createClient();
   const { t } = useLocale();
 
+  const { geoGate, loading: geoLoading } = useInstallationGeogate();
   const [installation, setInstallation] = useState<InstallationDetail | null>(null);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [issues, setIssues] = useState<InstallationIssue[]>([]);
   const [photos, setPhotos] = useState<InstallationPhoto[]>([]);
   const [photoTab, setPhotoTab] = useState<'before' | 'during' | 'after'>('before');
   const [loading, setLoading] = useState(true);
+  const [geoError, setGeoError] = useState<string | null>(null);
   const [newCheckItem, setNewCheckItem] = useState('');
   const [newIssue, setNewIssue] = useState('');
   const [issueSeverity, setIssueSeverity] = useState('minor');
@@ -117,31 +120,52 @@ export default function InstallationDetailPage() {
   }
 
   async function handleCheckin() {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      await supabase.from('installations').update({
-        status: 'in_progress',
-        checkin_at: new Date().toISOString(),
-        checkin_lat: pos.coords.latitude,
-        checkin_lng: pos.coords.longitude,
-      }).eq('id', id);
-      loadAll();
-    });
+    if (!installation) return;
+    setGeoError(null);
+    const result = await geoGate(installation.project_id, 'checkin', installation.id);
+    if (!result.allowed) {
+      setGeoError(result.reason);
+      return;
+    }
+    await supabase.from('installations').update({
+      status: 'in_progress',
+      checkin_at: new Date().toISOString(),
+    }).eq('id', id);
+    // Store GPS coords asynchronously
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        await supabase.from('installations').update({
+          checkin_lat: pos.coords.latitude,
+          checkin_lng: pos.coords.longitude,
+        }).eq('id', id);
+      }, () => {});
+    }
+    loadAll();
   }
 
   async function handleCheckout() {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      await supabase.from('installations').update({
-        status: 'completed',
-        checkout_at: new Date().toISOString(),
-        checkout_lat: pos.coords.latitude,
-        checkout_lng: pos.coords.longitude,
-        completion_report: completionReport || null,
-        client_satisfaction: satisfaction,
-      }).eq('id', id);
-      loadAll();
-    });
+    if (!installation) return;
+    setGeoError(null);
+    const result = await geoGate(installation.project_id, 'checkout', installation.id);
+    if (!result.allowed) {
+      setGeoError(result.reason);
+      return;
+    }
+    await supabase.from('installations').update({
+      status: 'completed',
+      checkout_at: new Date().toISOString(),
+      completion_report: completionReport || null,
+      client_satisfaction: satisfaction,
+    }).eq('id', id);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        await supabase.from('installations').update({
+          checkout_lat: pos.coords.latitude,
+          checkout_lng: pos.coords.longitude,
+        }).eq('id', id);
+      }, () => {});
+    }
+    loadAll();
   }
 
   async function toggleCheckItem(item: ChecklistItem) {
@@ -177,12 +201,19 @@ export default function InstallationDetailPage() {
   async function removePhoto(index: number) {
     const photo = filteredPhotos[index];
     if (!photo) return;
+    if (!confirm('Delete this photo?')) return;
     await supabase.from('installation_photos').delete().eq('id', photo.id);
     loadAll();
   }
 
   async function addIssue() {
-    if (!newIssue.trim()) return;
+    if (!newIssue.trim() || !installation) return;
+    setGeoError(null);
+    const result = await geoGate(installation.project_id, 'report_issue', installation.id);
+    if (!result.allowed) {
+      setGeoError(result.reason);
+      return;
+    }
     await supabase.from('installation_issues').insert({
       installation_id: id,
       description: newIssue.trim(),
@@ -223,6 +254,18 @@ export default function InstallationDetailPage() {
         </div>
         <StatusBadge status={installation.status} />
       </div>
+
+      {/* Geo-gate error banner */}
+      {geoError && (
+        <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 p-3 rounded-xl">
+          <ShieldAlert size={18} className="shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Location check failed</p>
+            <p>{geoError}</p>
+          </div>
+          <button onClick={() => setGeoError(null)} className="ml-auto text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
+        </div>
+      )}
 
       {/* Info Card */}
       <Card>
@@ -278,8 +321,8 @@ export default function InstallationDetailPage() {
               <Navigation size={18} /> {t('install.location')}
             </Button>
           )}
-          <Button variant="success" size="lg" className="flex-1" onClick={handleCheckin}>
-            <CheckCircle size={18} /> {t('install.check_in')}
+          <Button variant="success" size="lg" className="flex-1" onClick={handleCheckin} disabled={geoLoading}>
+            <CheckCircle size={18} /> {geoLoading ? t('common.loading') : t('install.check_in')}
           </Button>
         </div>
       )}
@@ -449,8 +492,8 @@ export default function InstallationDetailPage() {
                   <option value="major">Major</option>
                   <option value="critical">Critical</option>
                 </select>
-                <Button variant="danger" size="sm" onClick={addIssue}>
-                  <AlertTriangle size={14} /> {t('install.report_issue')}
+                <Button variant="danger" size="sm" onClick={addIssue} disabled={geoLoading}>
+                  <AlertTriangle size={14} /> {geoLoading ? t('common.loading') : t('install.report_issue')}
                 </Button>
               </div>
             </div>
@@ -491,8 +534,8 @@ export default function InstallationDetailPage() {
                   ))}
                 </div>
               </div>
-              <Button variant="success" size="lg" className="w-full" onClick={handleCheckout}>
-                <CheckCircle size={18} /> {t('install.completed')} & {t('install.check_out')}
+              <Button variant="success" size="lg" className="w-full" onClick={handleCheckout} disabled={geoLoading}>
+                <CheckCircle size={18} /> {geoLoading ? t('common.loading') : `${t('install.completed')} & ${t('install.check_out')}`}
               </Button>
             </div>
           </CardContent>

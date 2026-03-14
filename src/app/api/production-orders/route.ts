@@ -3,6 +3,12 @@ import { requireRole, isValidUUID } from '@/lib/auth/server';
 import { writeAuditLog } from '@/lib/security/audit';
 import { createServerSupabase } from '@/lib/supabase/server';
 
+/** Escape HTML to prevent XSS */
+function esc(str: string | null | undefined): string {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 export async function GET(request: NextRequest) {
   try {
     // ── RBAC: only ceo and workshop_manager can print production orders ──
@@ -41,10 +47,10 @@ export async function GET(request: NextRequest) {
 
     const partRows = parts.map((p: any) => `
       <tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;">${p.part_name}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;font-family:monospace;font-size:12px;">${p.part_code || '-'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;">${esc(p.part_name)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;font-family:monospace;font-size:12px;">${esc(p.part_code) || '-'}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;text-align:center;">
-          <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#f0ede8;">${p.current_station}</span>
+          <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#f0ede8;">${esc(p.current_station)}</span>
         </td>
         <td style="padding:8px 12px;border-bottom:1px solid #f0ede8;text-align:center;">
           <div style="width:20px;height:20px;border:2px solid #d1d5db;border-radius:4px;display:inline-block;"></div>
@@ -56,7 +62,7 @@ export async function GET(request: NextRequest) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Production Order - ${project?.reference_code || orderId}</title>
+  <title>Production Order - ${esc(project?.reference_code) || orderId}</title>
   <style>
     @media print { body { margin: 0; } .no-print { display: none; } @page { size: A4; margin: 15mm; } }
     body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; margin: 0; padding: 20px; }
@@ -87,17 +93,17 @@ export async function GET(request: NextRequest) {
     <div class="logo"><h1>ArtMood</h1><p>Production Order</p></div>
     <div class="info">
       <h2>BON DE PRODUCTION</h2>
-      <p><strong>Ref:</strong> ${project?.reference_code || '-'}</p>
+      <p><strong>Ref:</strong> ${esc(project?.reference_code) || '-'}</p>
       <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
-      <p><strong>Status:</strong> ${order.status}</p>
+      <p><strong>Status:</strong> ${esc(order.status)}</p>
     </div>
   </div>
 
   <div class="client-box">
     <h3>Client</h3>
-    <p class="name">${project?.client_name || '-'}</p>
-    <p class="detail">Type: ${project?.project_type || '-'}</p>
-    ${order.notes ? `<p class="detail">Notes: ${order.notes}</p>` : ''}
+    <p class="name">${esc(project?.client_name) || '-'}</p>
+    <p class="detail">Type: ${esc(project?.project_type) || '-'}</p>
+    ${order.notes ? `<p class="detail">Notes: ${esc(order.notes)}</p>` : ''}
   </div>
 
   <table>

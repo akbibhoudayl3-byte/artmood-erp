@@ -83,13 +83,17 @@ export default function StockItemDetailPage() {
     const qty = parseFloat(moveQty);
     if (!qty) return;
     const actualQty = ['out', 'consume'].includes(moveType) ? -qty : qty;
-    await supabase.from('stock_movements').insert({
+    const { error } = await supabase.from('stock_movements').insert({
       stock_item_id: id,
       movement_type: moveType,
       quantity: actualQty,
       notes: moveNotes || null,
       created_by: profile?.id,
     });
+    if (error) {
+      alert('Error: ' + error.message);
+      return;
+    }
     setShowAddMovement(false);
     setMoveQty('');
     setMoveNotes('');
