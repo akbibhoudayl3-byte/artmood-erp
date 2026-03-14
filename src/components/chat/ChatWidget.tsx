@@ -9,12 +9,12 @@ import {
   Edit3, Trash2, Pin, PinOff, Forward, MoreVertical,
   UserPlus, UserMinus, Settings, Play, Pause, Download, Minimize2,
   Phone, Video, PhoneOff, MicOff, Camera, MapPin, PhoneIncoming,
-  Volume2, VolumeX, VideoOff, Clock
+  Volume2, VolumeX, VideoOff, Clock, Archive, LogOut, MoreHorizontal
 } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Profile { id: string; full_name: string; role: string; avatar_url?: string; is_active: boolean; last_seen_at?: string; }
-interface Conversation { id: string; type: 'direct' | 'group'; name: string | null; created_at: string; updated_at: string; participants: { user_id: string; last_read_at: string; role?: string }[]; last_message?: Message; unread_count: number; other_user?: Profile; }
+interface Conversation { id: string; type: 'direct' | 'group'; name: string | null; created_at: string; updated_at: string; participants: { user_id: string; last_read_at: string; role?: string }[]; last_message?: Message; unread_count: number; other_user?: Profile; is_archived?: boolean; }
 interface Message { id: string; conversation_id: string; sender_id: string; content: string; created_at: string; edited_at?: string; is_deleted?: boolean; reply_to_id?: string; file_url?: string; file_name?: string; file_type?: string; file_size?: number; is_voice?: boolean; voice_duration?: number; forwarded_from?: string; latitude?: number; longitude?: number; location_name?: string; }
 interface Reaction { id: string; message_id: string; user_id: string; emoji: string; }
 
@@ -143,6 +143,8 @@ export default function ChatWidget() {
 
   // ── Contacts search
   const [searchContacts, setSearchContacts] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [convMenu, setConvMenu] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -186,7 +188,7 @@ export default function ChatWidget() {
   // ══════════════════════════════════════════════════════════════════════════
   const loadConversations = useCallback(async () => {
     if (!userId) return;
-    const { data: myParts } = await supabase.from('chat_participants').select('conversation_id, last_read_at').eq('user_id', userId);
+    const { data: myParts } = await supabase.from('chat_participants').select('conversation_id, last_read_at, archived_at').eq('user_id', userId);
     if (!myParts?.length) { setConversations([]); setLoading(false); return; }
     const convIds = myParts.map(p => p.conversation_id);
     const { data: convs } = await supabase.from('chat_conversations').select('id, type, name, created_at, updated_at').in('id', convIds).order('updated_at', { ascending: false });
@@ -205,7 +207,8 @@ export default function ChatWidget() {
       if (conv.type === 'direct') { const oid = participants.find(p => p.user_id !== userId)?.user_id; if (oid) otherUser = profilesMap[oid]; }
       const u = unread || 0;
       total += u;
-      convList.push({ ...conv, participants, last_message: lastMsgs?.[0] as Message | undefined, unread_count: u, other_user: otherUser });
+      const isArchived = !!myP?.archived_at;
+      convList.push({ ...conv, participants, last_message: lastMsgs?.[0] as Message | undefined, unread_count: u, other_user: otherUser, is_archived: isArchived });
     }
     setConversations(convList);
     setTotalUnread(total);
@@ -808,6 +811,30 @@ export default function ChatWidget() {
   async function removeGroupMember(convId: string, memberId: string) { await supabase.from('chat_participants').delete().eq('conversation_id', convId).eq('user_id', memberId); await loadConversations(); }
   async function renameGroup(convId: string, name: string) { await supabase.from('chat_conversations').update({ name }).eq('id', convId); await loadConversations(); }
 
+  async function archiveConversation(convId: string) {
+    if (!userId) return;
+    await supabase.from('chat_participants').update({ archived_at: new Date().toISOString() }).eq('conversation_id', convId).eq('user_id', userId);
+    setConvMenu(null);
+    if (activeConvId === convId) setActiveConvId(null);
+    await loadConversations();
+  }
+
+  async function unarchiveConversation(convId: string) {
+    if (!userId) return;
+    await supabase.from('chat_participants').update({ archived_at: null }).eq('conversation_id', convId).eq('user_id', userId);
+    setConvMenu(null);
+    await loadConversations();
+  }
+
+  async function deleteConversation(convId: string) {
+    if (!userId) return;
+    if (!confirm('Leave this conversation? You will no longer see it.')) return;
+    await supabase.from('chat_participants').delete().eq('conversation_id', convId).eq('user_id', userId);
+    setConvMenu(null);
+    if (activeConvId === convId) setActiveConvId(null);
+    await loadConversations();
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // REALTIME
   // ══════════════════════════════════════════════════════════════════════════
@@ -849,14 +876,17 @@ export default function ChatWidget() {
   useEffect(() => { if (activeConvId) loadMessages(); }, [activeConvId]);
 
   // Close menus on click
-  useEffect(() => { const h = () => { setContextMenu(null); setShowEmojiFor(null); }; window.addEventListener('click', h); return () => window.removeEventListener('click', h); }, []);
+  useEffect(() => { const h = () => { setContextMenu(null); setShowEmojiFor(null); setConvMenu(null); }; window.addEventListener('click', h); return () => window.removeEventListener('click', h); }, []);
 
   // ── Filtered data
   const filteredConvs = conversations.filter(c => {
+    // Archive filter
+    if (showArchived ? !c.is_archived : c.is_archived) return false;
     if (!searchConv) return true;
     const n = (c.type === 'direct' ? c.other_user?.full_name || '' : c.name || '').toLowerCase();
     return n.includes(searchConv.toLowerCase());
   });
+  const archivedCount = conversations.filter(c => c.is_archived).length;
   const filteredUsers = allUsers.filter(u => u.id !== userId && u.is_active && (!searchUsers || u.full_name.toLowerCase().includes(searchUsers.toLowerCase())));
   const activeConv = conversations.find(c => c.id === activeConvId);
   const myRole = activeConv?.participants.find(p => p.user_id === userId)?.role;
@@ -1033,12 +1063,20 @@ export default function ChatWidget() {
               {/* CHATS TAB */}
               {listTab === 'chats' && (
                 <div className="flex-1 overflow-y-auto">
+                  {/* Archive toggle */}
+                  {archivedCount > 0 && (
+                    <button onClick={() => setShowArchived(!showArchived)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 border-b border-gray-100 text-gray-500">
+                      <Archive size={14} />
+                      <span className="text-xs font-medium">{showArchived ? 'Back to chats' : `Archived (${archivedCount})`}</span>
+                    </button>
+                  )}
                   {loading ? <div className="flex items-center justify-center h-24 text-gray-400 text-sm">Loading...</div> :
                     filteredConvs.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-                        <MessageCircle size={32} className="mb-2 opacity-30" />
-                        <p className="text-sm">No conversations</p>
-                        <button onClick={() => setShowNewChat(true)} className="mt-1 text-[#C9956B] text-sm font-medium">Start a chat</button>
+                        {showArchived ? <Archive size={32} className="mb-2 opacity-30" /> : <MessageCircle size={32} className="mb-2 opacity-30" />}
+                        <p className="text-sm">{showArchived ? 'No archived conversations' : 'No conversations'}</p>
+                        {!showArchived && <button onClick={() => setShowNewChat(true)} className="mt-1 text-[#C9956B] text-sm font-medium">Start a chat</button>}
                       </div>
                     ) : filteredConvs.map(conv => {
                       const dn = conv.type === 'direct' ? conv.other_user?.full_name || 'Unknown' : conv.name || 'Group';
@@ -1051,26 +1089,53 @@ export default function ChatWidget() {
                         if (sn) preview = `${sn}: ${preview}`;
                       }
                       return (
-                        <button key={conv.id} onClick={() => setActiveConvId(conv.id)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-gray-50 border-b border-gray-50">
-                          <div className="relative shrink-0">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold ${conv.type === 'group' ? 'bg-gradient-to-br from-indigo-500 to-purple-600' : ''}`}
-                              style={conv.type === 'direct' ? { backgroundColor: RC[conv.other_user?.role || ''] || '#94A3B8' } : {}}>
-                              {conv.type === 'group' ? <Users size={16} /> : getInitials(conv.other_user?.full_name || '?')}
+                        <div key={conv.id} className="relative group/conv flex items-center border-b border-gray-50 hover:bg-gray-50">
+                          <button onClick={() => { setActiveConvId(conv.id); setConvMenu(null); }}
+                            className="flex-1 flex items-center gap-2.5 px-3 py-2.5 text-left">
+                            <div className="relative shrink-0">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold ${conv.type === 'group' ? 'bg-gradient-to-br from-indigo-500 to-purple-600' : ''}`}
+                                style={conv.type === 'direct' ? { backgroundColor: RC[conv.other_user?.role || ''] || '#94A3B8' } : {}}>
+                                {conv.type === 'group' ? <Users size={16} /> : getInitials(conv.other_user?.full_name || '?')}
+                              </div>
+                              {online && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />}
                             </div>
-                            {online && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-[13px] text-[#1a1a2e] truncate">{dn}</span>
-                              {lm && <span className="text-[10px] text-gray-400 ml-1 shrink-0">{timeAgo(lm.created_at)}</span>}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-[13px] text-[#1a1a2e] truncate">{dn}</span>
+                                {lm && <span className="text-[10px] text-gray-400 ml-1 shrink-0">{timeAgo(lm.created_at)}</span>}
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <p className="text-[11px] text-gray-500 truncate">{preview}</p>
+                                {conv.unread_count > 0 && <span className="ml-1 shrink-0 w-4.5 h-4.5 bg-[#C9956B] text-white text-[9px] font-bold rounded-full flex items-center justify-center min-w-[18px] px-1">{conv.unread_count > 9 ? '9+' : conv.unread_count}</span>}
+                              </div>
                             </div>
-                            <div className="flex items-center justify-between">
-                              <p className="text-[11px] text-gray-500 truncate">{preview}</p>
-                              {conv.unread_count > 0 && <span className="ml-1 shrink-0 w-4.5 h-4.5 bg-[#C9956B] text-white text-[9px] font-bold rounded-full flex items-center justify-center min-w-[18px] px-1">{conv.unread_count > 9 ? '9+' : conv.unread_count}</span>}
+                          </button>
+                          {/* Conversation menu button */}
+                          <button onClick={(e) => { e.stopPropagation(); setConvMenu(convMenu === conv.id ? null : conv.id); }}
+                            className="p-1.5 mr-2 hover:bg-gray-200 rounded-lg text-gray-400 opacity-0 group-hover/conv:opacity-100 transition-opacity shrink-0">
+                            <MoreHorizontal size={16} />
+                          </button>
+                          {/* Dropdown menu */}
+                          {convMenu === conv.id && (
+                            <div className="absolute right-2 top-10 bg-white shadow-xl rounded-xl border py-1 z-30 min-w-[140px]" onClick={e => e.stopPropagation()}>
+                              {conv.is_archived ? (
+                                <button onClick={() => unarchiveConversation(conv.id)}
+                                  className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center gap-2 text-gray-700">
+                                  <Archive size={12} /> Unarchive
+                                </button>
+                              ) : (
+                                <button onClick={() => archiveConversation(conv.id)}
+                                  className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 flex items-center gap-2 text-gray-700">
+                                  <Archive size={12} /> Archive
+                                </button>
+                              )}
+                              <button onClick={() => deleteConversation(conv.id)}
+                                className="w-full px-3 py-1.5 text-left text-xs hover:bg-red-50 flex items-center gap-2 text-red-600">
+                                <LogOut size={12} /> Leave & Delete
+                              </button>
                             </div>
-                          </div>
-                        </button>
+                          )}
+                        </div>
                       );
                     })
                   }
