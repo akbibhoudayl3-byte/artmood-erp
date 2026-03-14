@@ -277,20 +277,53 @@ export default function ChatPage() {
       }
     }
 
-    // Create new conversation (generate ID client-side to avoid RLS SELECT issue)
+    // Create conversation + participants via RPC-style raw insert
     const convId = crypto.randomUUID();
 
-    const { error: convErr } = await supabase
-      .from('chat_conversations')
-      .insert({ id: convId, type: 'direct' });
+    // Use raw fetch with Prefer: return=minimal to avoid RLS SELECT check on insert
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    const proxyBase = '/supabase-proxy';
 
-    if (convErr) { console.error('Create conv error:', convErr); return; }
+    // Step 1: Create conversation
+    const r1 = await fetch(`${proxyBase}/rest/v1/chat_conversations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': anonKey,
+        'Authorization': `Bearer ${token}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ id: convId, type: 'direct' }),
+    });
 
-    const { error: partErr } = await supabase.from('chat_participants').insert([
-      { conversation_id: convId, user_id: userId },
-      { conversation_id: convId, user_id: otherUserId },
-    ]);
-    if (partErr) { console.error('Add participants error:', partErr); return; }
+    if (!r1.ok) {
+      const err = await r1.text();
+      console.error('Create conv error:', r1.status, err);
+      return;
+    }
+
+    // Step 2: Add participants
+    const r2 = await fetch(`${proxyBase}/rest/v1/chat_participants`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': anonKey,
+        'Authorization': `Bearer ${token}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify([
+        { conversation_id: convId, user_id: userId },
+        { conversation_id: convId, user_id: otherUserId },
+      ]),
+    });
+
+    if (!r2.ok) {
+      const err = await r2.text();
+      console.error('Add participants error:', r2.status, err);
+      return;
+    }
 
     setActiveConvId(convId);
     setShowNewChat(false);
@@ -307,17 +340,41 @@ export default function ChatPage() {
 
     const groupConvId = crypto.randomUUID();
 
-    const { error: convErr } = await supabase
-      .from('chat_conversations')
-      .insert({ id: groupConvId, type: 'group', name: groupName.trim() });
+    const { data: { session: gSession } } = await supabase.auth.getSession();
+    const gToken = gSession?.access_token;
+    const gAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    const gProxyBase = '/supabase-proxy';
 
-    if (convErr) { console.error('Create group error:', convErr); return; }
+    const gr1 = await fetch(`${gProxyBase}/rest/v1/chat_conversations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': gAnonKey,
+        'Authorization': `Bearer ${gToken}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ id: groupConvId, type: 'group', name: groupName.trim() }),
+    });
+
+    if (!gr1.ok) { console.error('Create group error:', await gr1.text()); return; }
 
     const participants = [userId, ...selectedUsers].map(uid => ({
       conversation_id: groupConvId,
       user_id: uid,
     }));
-    await supabase.from('chat_participants').insert(participants);
+
+    const gr2 = await fetch(`${gProxyBase}/rest/v1/chat_participants`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': gAnonKey,
+        'Authorization': `Bearer ${gToken}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify(participants),
+    });
+
+    if (!gr2.ok) { console.error('Add group participants error:', await gr2.text()); return; }
 
     setActiveConvId(groupConvId);
     setShowNewChat(false);
