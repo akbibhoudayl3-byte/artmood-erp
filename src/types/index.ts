@@ -6,3 +6,4 @@ export * from './stock';
 export * from './hr';
 export * from './installation';
 export * from './chat';
+export * from './kitchen';

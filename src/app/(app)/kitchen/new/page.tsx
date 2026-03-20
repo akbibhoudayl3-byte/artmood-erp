@@ -1,0 +1,754 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import Card, { CardHeader, CardContent } from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Input, { Select, Textarea } from '@/components/ui/Input';
+import { formatMAD, roundMoney } from '@/lib/utils/money';
+import { PIPELINE_STEPS, MODULE_TYPE_LABELS, DEFAULT_DIMENSIONS, MARGIN_RULES } from '@/lib/config/kitchen';
+import {
+  ArrowLeft, ArrowRight, Check, ChefHat, Plus, Trash2,
+  AlertTriangle, AlertCircle, CheckCircle, FileText, Save, Send,
+} from 'lucide-react';
+import type {
+  KitchenProject, KitchenWall, KitchenModuleInstance, KitchenFiller,
+  ProductModule, ModuleOption, BOMResult, CostBreakdown,
+  ValidationResult, FillerSuggestion, ClientType, LayoutType, OpeningSystem,
+  FacadeOverride,
+} from '@/types/kitchen';
+
+// ── Helpers ──
+
+async function api<T = Record<string, unknown>>(url: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, body ? {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  } : {});
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Network error' }));
+    throw new Error(err.error || 'API error');
+  }
+  return res.json();
+}
+
+// ── Main Component ──
+
+export default function KitchenPipelinePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('id');
+
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Data
+  const [kitchen, setKitchen] = useState<Partial<KitchenProject>>({
+    client_name: '',
+    client_type: 'standard',
+    kitchen_type: 'modern',
+    layout_type: 'I',
+    full_height: false,
+    opening_system: 'handles',
+    structure_material: 'stratifie',
+    facade_material: 'mdf_18_uv',
+    back_thickness: 5,
+    edge_caisson_mm: 0.8,
+    edge_facade_mm: 1.0,
+  });
+  const [kitchenId, setKitchenId] = useState<string | null>(editId);
+  const [walls, setWalls] = useState<KitchenWall[]>([]);
+  const [wallInputs, setWallInputs] = useState<{ wall_name: string; wall_length_mm: number }[]>([{ wall_name: 'A', wall_length_mm: 3000 }]);
+  const [availableModules, setAvailableModules] = useState<(ProductModule & { module_options?: ModuleOption[] })[]>([]);
+  const [placedModules, setPlacedModules] = useState<{ wall_id: string; module_id: string; width_mm: number; height_mm: number; depth_mm: number; facade_override: FacadeOverride | null }[]>([]);
+  const [savedModules, setSavedModules] = useState<KitchenModuleInstance[]>([]);
+  const [fillerSuggestions, setFillerSuggestions] = useState<FillerSuggestion[]>([]);
+  const [fillers, setFillers] = useState<KitchenFiller[]>([]);
+  const [bom, setBom] = useState<BOMResult | null>(null);
+  const [cost, setCost] = useState<CostBreakdown | null>(null);
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
+
+  // ── Load existing project ──
+
+  useEffect(() => {
+    if (editId) {
+      setLoading(true);
+      api<{ kitchen: KitchenProject; walls: KitchenWall[]; modules: KitchenModuleInstance[] }>(
+        `/api/kitchen/project?id=${editId}`
+      ).then(data => {
+        setKitchen(data.kitchen);
+        setKitchenId(data.kitchen.id);
+        setWalls(data.walls);
+        setWallInputs(data.walls.map(w => ({ wall_name: w.wall_name, wall_length_mm: w.wall_length_mm })));
+        setSavedModules(data.modules);
+      }).catch(e => setError(e.message)).finally(() => setLoading(false));
+    }
+  }, [editId]);
+
+  // Load available modules on mount
+  useEffect(() => {
+    api<{ modules: ProductModule[] }>('/api/kitchen/modules')
+      .then(d => setAvailableModules(d.modules))
+      .catch(() => {});
+  }, []);
+
+  // ── Step Actions ──
+
+  const saveProject = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api<{ kitchen: KitchenProject }>('/api/kitchen/project', {
+        ...(kitchenId ? { id: kitchenId } : {}),
+        ...kitchen,
+      });
+      setKitchenId(data.kitchen.id);
+      setKitchen(data.kitchen);
+      setStep(2);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchen, kitchenId]);
+
+  const saveWalls = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api<{ walls: KitchenWall[] }>('/api/kitchen/walls', {
+        kitchen_id: kitchenId,
+        walls: wallInputs,
+      });
+      setWalls(data.walls);
+      // Auto-generate modules
+      autoPlaceModules(data.walls);
+      setStep(3);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId, wallInputs, availableModules]);
+
+  const autoPlaceModules = (savedWalls: KitchenWall[]) => {
+    const placed: typeof placedModules = [];
+    const base600 = availableModules.find(m => m.code === 'BASE_600');
+    const sink600 = availableModules.find(m => m.code === 'SINK_600');
+
+    for (const wall of savedWalls) {
+      let remaining = wall.wall_length_mm;
+      let addedSink = false;
+
+      // Add a sink to first wall
+      if (!addedSink && sink600 && remaining >= 600 && wall === savedWalls[0]) {
+        placed.push({
+          wall_id: wall.id,
+          module_id: sink600.id,
+          width_mm: 600,
+          height_mm: DEFAULT_DIMENSIONS.sink.height,
+          depth_mm: DEFAULT_DIMENSIONS.sink.depth,
+          facade_override: null,
+        });
+        remaining -= 600;
+        addedSink = true;
+      }
+
+      // Fill rest with base 600
+      while (remaining >= 600 && base600) {
+        placed.push({
+          wall_id: wall.id,
+          module_id: base600.id,
+          width_mm: 600,
+          height_mm: DEFAULT_DIMENSIONS.base.height,
+          depth_mm: DEFAULT_DIMENSIONS.base.depth,
+          facade_override: null,
+        });
+        remaining -= 600;
+      }
+
+      // If remaining >= 300, add a smaller module
+      if (remaining >= 300) {
+        const smaller = availableModules.find(m => m.type === 'base' && m.default_width <= remaining);
+        if (smaller) {
+          placed.push({
+            wall_id: wall.id,
+            module_id: smaller.id,
+            width_mm: smaller.default_width,
+            height_mm: DEFAULT_DIMENSIONS.base.height,
+            depth_mm: DEFAULT_DIMENSIONS.base.depth,
+            facade_override: null,
+          });
+        }
+      }
+    }
+
+    setPlacedModules(placed);
+  };
+
+  const saveModules = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api<{ modules: KitchenModuleInstance[] }>('/api/kitchen/place-modules', {
+        kitchen_id: kitchenId,
+        modules: placedModules,
+      });
+      setSavedModules(data.modules);
+      setStep(4);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId, placedModules]);
+
+  const saveOptions = () => setStep(5);
+  const saveCustomization = () => setStep(6);
+
+  const runDetection = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api<{ validation: ValidationResult; fillerSuggestions: FillerSuggestion[] }>(
+        '/api/kitchen/validate', { kitchen_id: kitchenId }
+      );
+      setValidation(data.validation);
+      setFillerSuggestions(data.fillerSuggestions);
+
+      // Auto-create fillers from suggestions
+      const autoFillers = data.fillerSuggestions
+        .filter(s => s.suggestion === 'filler_needed')
+        .map(s => ({
+          wall_id: s.wall_id,
+          side: 'right' as const,
+          width_mm: s.gap_mm,
+          height_mm: DEFAULT_DIMENSIONS.base.height,
+          depth_mm: DEFAULT_DIMENSIONS.base.depth,
+        }));
+
+      if (autoFillers.length > 0) {
+        await api('/api/kitchen/fillers', { kitchen_id: kitchenId, fillers: autoFillers });
+      }
+
+      setStep(7);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId]);
+
+  const computePrice = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api<{ cost: CostBreakdown; bom: BOMResult }>(
+        '/api/kitchen/cost', { kitchen_id: kitchenId }
+      );
+      setCost(data.cost);
+      setBom(data.bom);
+      setStep(8);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId]);
+
+  const runValidation = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    try {
+      const data = await api<{ validation: ValidationResult }>('/api/kitchen/validate', { kitchen_id: kitchenId });
+      setValidation(data.validation);
+      setStep(9);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId]);
+
+  const saveDraft = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    try {
+      await api('/api/kitchen/project', { id: kitchenId, ...kitchen, status: 'draft' });
+      router.push('/kitchen');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId, kitchen, router]);
+
+  const markValidated = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    try {
+      await api('/api/kitchen/project', { id: kitchenId, ...kitchen, status: 'validated' });
+      router.push('/kitchen');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId, kitchen, router]);
+
+  // ── Module Manipulation ──
+
+  const addModule = (wallId: string, moduleId: string) => {
+    const mod = availableModules.find(m => m.id === moduleId);
+    if (!mod) return;
+    const dims = DEFAULT_DIMENSIONS[mod.type] ?? DEFAULT_DIMENSIONS.base;
+    setPlacedModules(prev => [...prev, {
+      wall_id: wallId,
+      module_id: moduleId,
+      width_mm: mod.default_width,
+      height_mm: dims.height,
+      depth_mm: dims.depth,
+      facade_override: null,
+    }]);
+  };
+
+  const removeModule = (index: number) => {
+    setPlacedModules(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateModuleWidth = (index: number, width: number) => {
+    setPlacedModules(prev => prev.map((m, i) => i === index ? { ...m, width_mm: width } : m));
+  };
+
+  const updateModuleFacade = (index: number, facade: FacadeOverride | null) => {
+    setPlacedModules(prev => prev.map((m, i) => i === index ? { ...m, facade_override: facade } : m));
+  };
+
+  // ── Layout wall count sync ──
+
+  useEffect(() => {
+    const layoutWalls = kitchen.layout_type === 'U' ? 3 : kitchen.layout_type === 'L' ? 2 : 1;
+    if (wallInputs.length !== layoutWalls) {
+      const newWalls = Array.from({ length: layoutWalls }, (_, i) => ({
+        wall_name: String.fromCharCode(65 + i),
+        wall_length_mm: wallInputs[i]?.wall_length_mm ?? 3000,
+      }));
+      setWallInputs(newWalls);
+    }
+  }, [kitchen.layout_type]);
+
+  // ── Render ──
+
+  return (
+    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => step > 1 ? setStep(step - 1) : router.push('/kitchen')}
+          className="w-9 h-9 rounded-xl bg-[#F5F3F0] flex items-center justify-center hover:bg-[#EBE8E3] transition-colors">
+          <ArrowLeft className="w-4 h-4 text-[#1a1a2e]" />
+        </button>
+        <div className="flex-1">
+          <h1 className="text-lg font-bold text-[#1a1a2e]">
+            {kitchenId ? `Cuisine — ${kitchen.client_name}` : 'Nouvelle Cuisine'}
+          </h1>
+          <p className="text-sm text-[#64648B]">
+            Étape {step}/9 — {PIPELINE_STEPS[step - 1]?.label}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="flex gap-1">
+        {PIPELINE_STEPS.map((s) => (
+          <div key={s.step} className={`h-1.5 flex-1 rounded-full transition-colors ${
+            s.step < step ? 'bg-[#C9956B]' : s.step === step ? 'bg-[#1B2A4A]' : 'bg-[#E8E5E0]'
+          }`} />
+        ))}
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        </div>
+      )}
+
+      {/* ── STEP 1: Projet ── */}
+      {step === 1 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Informations Projet</h2></CardHeader>
+          <CardContent className="space-y-4">
+            <Input label="Nom du client *" value={kitchen.client_name ?? ''} placeholder="Ex: Mme Amrani"
+              onChange={e => setKitchen(p => ({ ...p, client_name: e.target.value }))} />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Select label="Type client" value={kitchen.client_type ?? 'standard'}
+                onChange={e => setKitchen(p => ({ ...p, client_type: e.target.value as ClientType }))}
+                options={[
+                  { value: 'standard', label: 'Standard (50%)' },
+                  { value: 'promoteur', label: 'Promoteur (30%)' },
+                  { value: 'revendeur', label: 'Revendeur (30%)' },
+                  { value: 'architecte', label: 'Architecte (40%)' },
+                  { value: 'urgent', label: 'Urgent (70%)' },
+                ]} />
+              <Select label="Type cuisine" value={kitchen.kitchen_type ?? 'modern'}
+                onChange={e => setKitchen(p => ({ ...p, kitchen_type: e.target.value }))}
+                options={[
+                  { value: 'modern', label: 'Moderne' },
+                  { value: 'classic', label: 'Classique' },
+                  { value: 'semi_classic', label: 'Semi-Classique' },
+                ]} />
+            </div>
+
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={kitchen.full_height ?? false}
+                  onChange={e => setKitchen(p => ({ ...p, full_height: e.target.checked }))}
+                  className="w-4 h-4 rounded border-[#E2E0DC] text-[#C9956B] focus:ring-[#C9956B]" />
+                <span className="text-sm text-[#4A4A6A]">Pleine hauteur</span>
+              </label>
+            </div>
+
+            <Button onClick={saveProject} loading={loading} fullWidth size="lg">
+              Continuer <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 2: Layout ── */}
+      {step === 2 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Plan & Murs</h2></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-2">
+              {(['I', 'L', 'U'] as LayoutType[]).map(layout => (
+                <button key={layout} onClick={() => setKitchen(p => ({ ...p, layout_type: layout }))}
+                  className={`py-4 rounded-xl border-2 text-center font-bold text-2xl transition-all ${
+                    kitchen.layout_type === layout
+                      ? 'border-[#C9956B] bg-[#C9956B]/5 text-[#C9956B]'
+                      : 'border-[#E8E5E0] text-[#64648B] hover:border-[#C9956B]/30'
+                  }`}>
+                  {layout}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              {wallInputs.map((w, i) => (
+                <Input key={i} label={`Mur ${w.wall_name} — Longueur (mm)`} type="number"
+                  value={w.wall_length_mm}
+                  onChange={e => {
+                    const val = parseInt(e.target.value) || 0;
+                    setWallInputs(prev => prev.map((ww, ii) => ii === i ? { ...ww, wall_length_mm: val } : ww));
+                  }} />
+              ))}
+            </div>
+
+            <Button onClick={saveWalls} loading={loading} fullWidth size="lg">
+              Générer les modules <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 3: Modules ── */}
+      {step === 3 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-[#1a1a2e]">Modules</h2>
+              <span className="text-xs text-[#64648B]">{placedModules.length} module(s)</span>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {walls.map(wall => {
+              const wallMods = placedModules.filter(m => m.wall_id === wall.id);
+              const totalW = wallMods.reduce((s, m) => s + m.width_mm, 0);
+              const diff = wall.wall_length_mm - totalW;
+
+              return (
+                <div key={wall.id} className="border border-[#E8E5E0] rounded-xl p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-[#1a1a2e]">Mur {wall.wall_name} — {wall.wall_length_mm}mm</span>
+                    <span className={`text-xs font-medium ${diff === 0 ? 'text-emerald-600' : diff > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                      {diff === 0 ? 'OK' : diff > 0 ? `+${diff}mm libre` : `${diff}mm dépassement`}
+                    </span>
+                  </div>
+
+                  {/* Module list */}
+                  {wallMods.map((m, idx) => {
+                    const globalIdx = placedModules.indexOf(m);
+                    const mod = availableModules.find(am => am.id === m.module_id);
+                    return (
+                      <div key={idx} className="flex items-center gap-2 bg-[#FAFAF8] rounded-lg p-2">
+                        <span className="text-xs font-medium text-[#1a1a2e] flex-1">{mod?.label ?? 'Module'}</span>
+                        <Input type="number" className="w-20 !py-1.5 !px-2 text-xs" value={m.width_mm}
+                          onChange={e => updateModuleWidth(globalIdx, parseInt(e.target.value) || 0)} />
+                        <span className="text-xs text-[#64648B]">mm</span>
+                        <button onClick={() => removeModule(globalIdx)}
+                          className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Add module */}
+                  <select onChange={e => { if (e.target.value) { addModule(wall.id, e.target.value); e.target.value = ''; } }}
+                    className="w-full px-3 py-2 border border-dashed border-[#C9956B]/30 rounded-lg text-sm text-[#C9956B] bg-transparent cursor-pointer">
+                    <option value="">+ Ajouter un module...</option>
+                    {Object.entries(
+                      availableModules.reduce((acc, m) => {
+                        const type = MODULE_TYPE_LABELS[m.type] ?? m.type;
+                        if (!acc[type]) acc[type] = [];
+                        acc[type].push(m);
+                        return acc;
+                      }, {} as Record<string, typeof availableModules>)
+                    ).map(([type, mods]) => (
+                      <optgroup key={type} label={type}>
+                        {mods.map(m => (
+                          <option key={m.id} value={m.id}>{m.label} ({m.default_width}mm)</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+
+            <Button onClick={saveModules} loading={loading} fullWidth size="lg">
+              Confirmer les modules <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 4: Options Globales ── */}
+      {step === 4 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Options Globales</h2></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-2">
+              {(['handles', 'gola', 'push'] as OpeningSystem[]).map(os => (
+                <button key={os} onClick={() => setKitchen(p => ({ ...p, opening_system: os }))}
+                  className={`py-3 rounded-xl border-2 text-center text-sm font-medium transition-all ${
+                    kitchen.opening_system === os
+                      ? 'border-[#C9956B] bg-[#C9956B]/5 text-[#C9956B]'
+                      : 'border-[#E8E5E0] text-[#64648B] hover:border-[#C9956B]/30'
+                  }`}>
+                  {os === 'handles' ? 'Poignées' : os === 'gola' ? 'Gola Alu' : 'Push'}
+                </button>
+              ))}
+            </div>
+
+            <Select label="Matériau structure" value={kitchen.structure_material ?? 'stratifie'}
+              onChange={e => setKitchen(p => ({ ...p, structure_material: e.target.value }))}
+              options={[
+                { value: 'stratifie', label: 'Stratifié' },
+                { value: 'latte', label: 'Latte' },
+              ]} />
+
+            <Select label="Façade par défaut" value={kitchen.facade_material ?? 'mdf_18_uv'}
+              onChange={e => setKitchen(p => ({ ...p, facade_material: e.target.value }))}
+              options={[
+                { value: 'mdf_18_uv', label: 'MDF 18 UV' },
+              ]} />
+
+            <Select label="Dos" value={String(kitchen.back_thickness ?? 5)}
+              onChange={e => setKitchen(p => ({ ...p, back_thickness: parseInt(e.target.value) }))}
+              options={[
+                { value: '5', label: '5mm' },
+                { value: '8', label: '8mm' },
+              ]} />
+
+            <Button onClick={async () => {
+              if (kitchenId) {
+                setLoading(true);
+                await api('/api/kitchen/project', { id: kitchenId, ...kitchen }).catch(() => {});
+                setLoading(false);
+              }
+              saveOptions();
+            }} loading={loading} fullWidth size="lg">
+              Continuer <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 5: Customization par module ── */}
+      {step === 5 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Personnalisation par Module</h2></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-[#64648B]">Optionnel: changer la façade de modules individuels</p>
+
+            {savedModules.map((m, i) => {
+              const mod = availableModules.find(am => am.id === m.module_id);
+              return (
+                <div key={m.id || i} className="flex items-center gap-3 bg-[#FAFAF8] rounded-lg p-3">
+                  <span className="text-sm font-medium text-[#1a1a2e] flex-1">
+                    {mod?.label ?? 'Module'} ({m.width_mm}mm)
+                  </span>
+                  <select value={m.facade_override ?? ''}
+                    onChange={e => {
+                      const val = e.target.value as FacadeOverride | '';
+                      setSavedModules(prev => prev.map((mm, ii) =>
+                        ii === i ? { ...mm, facade_override: val || null } : mm
+                      ));
+                    }}
+                    className="px-3 py-1.5 border border-[#E2E0DC] rounded-lg text-sm bg-white">
+                    <option value="">MDF (défaut)</option>
+                    <option value="glass">Verre</option>
+                    <option value="semi_glass">Semi-verre</option>
+                  </select>
+                </div>
+              );
+            })}
+
+            <Button onClick={saveCustomization} fullWidth size="lg">
+              Continuer <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 6: Auto Detection ── */}
+      {step === 6 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Détection Automatique</h2></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-[#64648B]">Le système détecte automatiquement les fillers, le système spider, et les panneaux aluminium évier.</p>
+            <Button onClick={runDetection} loading={loading} fullWidth size="lg" variant="accent">
+              Lancer la détection <CheckCircle className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 7: Prix ── */}
+      {step === 7 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Calcul du Prix</h2></CardHeader>
+          <CardContent className="space-y-4">
+            {fillerSuggestions.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-[#1a1a2e]">Fillers détectés</h3>
+                {fillerSuggestions.map((f, i) => (
+                  <div key={i} className={`flex items-center gap-2 p-2 rounded-lg text-xs ${
+                    f.suggestion === 'ok' ? 'bg-emerald-50 text-emerald-700' :
+                    f.suggestion === 'overflow' ? 'bg-red-50 text-red-700' :
+                    'bg-amber-50 text-amber-700'
+                  }`}>
+                    {f.suggestion === 'ok' ? <CheckCircle className="w-3.5 h-3.5" /> :
+                     f.suggestion === 'overflow' ? <AlertCircle className="w-3.5 h-3.5" /> :
+                     <AlertTriangle className="w-3.5 h-3.5" />}
+                    {f.message}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button onClick={computePrice} loading={loading} fullWidth size="lg" variant="accent">
+              Calculer le prix <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 8: Validation ── */}
+      {step === 8 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Résumé & Validation</h2></CardHeader>
+          <CardContent className="space-y-4">
+            {cost && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <span className="text-[#64648B]">Matériaux</span><span className="text-right font-medium">{formatMAD(cost.materials)}</span>
+                  <span className="text-[#64648B]">Quincaillerie</span><span className="text-right font-medium">{formatMAD(cost.hardware)}</span>
+                  <span className="text-[#64648B]">Accessoires</span><span className="text-right font-medium">{formatMAD(cost.accessories)}</span>
+                  <span className="text-[#64648B]">Main d&apos;oeuvre</span><span className="text-right font-medium">{formatMAD(cost.labour)}</span>
+                  <span className="text-[#64648B]">Charges fixes</span><span className="text-right font-medium">{formatMAD(cost.fixed_charges)}</span>
+                  <span className="text-[#64648B]">Transport</span><span className="text-right font-medium">{formatMAD(cost.transport)}</span>
+                  <span className="text-[#64648B]">Installation</span><span className="text-right font-medium">{formatMAD(cost.installation)}</span>
+                </div>
+                <div className="border-t border-[#E8E5E0] pt-2 grid grid-cols-2 gap-2 text-sm">
+                  <span className="text-[#64648B]">Sous-total</span><span className="text-right font-medium">{formatMAD(cost.subtotal)}</span>
+                  <span className="text-[#64648B]">Marge ({cost.margin_percent}%)</span><span className="text-right font-medium">{formatMAD(cost.margin_amount)}</span>
+                  <span className="text-[#64648B]">Total HT</span><span className="text-right font-semibold">{formatMAD(cost.total_ht)}</span>
+                  <span className="text-[#64648B]">TVA (20%)</span><span className="text-right font-medium">{formatMAD(cost.vat_amount)}</span>
+                </div>
+                <div className="border-t-2 border-[#1B2A4A] pt-2 grid grid-cols-2 text-base">
+                  <span className="font-bold text-[#1a1a2e]">Total TTC</span>
+                  <span className="text-right font-bold text-[#C9956B]">{formatMAD(cost.total_ttc)}</span>
+                </div>
+              </div>
+            )}
+
+            {bom && (
+              <div className="text-xs text-[#64648B] grid grid-cols-3 gap-2 bg-[#FAFAF8] rounded-lg p-3">
+                <div><strong>{bom.panels.length}</strong> panneaux</div>
+                <div><strong>{roundMoney(bom.edge_banding.reduce((s, e) => s + e.length_m, 0))}m</strong> chant</div>
+                <div><strong>{bom.hardware.reduce((s, h) => s + h.qty, 0)}</strong> quincaillerie</div>
+              </div>
+            )}
+
+            <Button onClick={runValidation} loading={loading} fullWidth size="lg">
+              Valider <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── STEP 9: Actions ── */}
+      {step === 9 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Actions</h2></CardHeader>
+          <CardContent className="space-y-4">
+            {validation && (
+              <div className={`p-3 rounded-xl border text-sm flex items-center gap-2 ${
+                validation.overall === 'green' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                validation.overall === 'orange' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                'bg-red-50 border-red-200 text-red-700'
+              }`}>
+                {validation.overall === 'green' ? <CheckCircle className="w-5 h-5" /> :
+                 validation.overall === 'orange' ? <AlertTriangle className="w-5 h-5" /> :
+                 <AlertCircle className="w-5 h-5" />}
+                <div>
+                  <strong>{validation.overall === 'green' ? 'Validé' : validation.overall === 'orange' ? 'Avertissements' : 'Erreurs bloquantes'}</strong>
+                  <span className="ml-2">— {validation.issues.length} point(s)</span>
+                </div>
+              </div>
+            )}
+
+            {validation?.issues.map((issue, i) => (
+              <div key={i} className={`px-3 py-2 rounded-lg text-xs ${
+                issue.severity === 'red' ? 'bg-red-50 text-red-700' :
+                issue.severity === 'orange' ? 'bg-amber-50 text-amber-700' :
+                'bg-emerald-50 text-emerald-700'
+              }`}>
+                {issue.message}
+              </div>
+            ))}
+
+            <div className="grid grid-cols-1 gap-3 pt-2">
+              <Button onClick={saveDraft} loading={loading} variant="secondary" fullWidth size="lg">
+                <Save className="w-4 h-4" /> Sauvegarder Brouillon
+              </Button>
+
+              {validation?.can_generate_quote !== false && (
+                <Button onClick={markValidated} loading={loading} variant="accent" fullWidth size="lg">
+                  <Send className="w-4 h-4" /> Valider & Générer Devis
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}

@@ -21,6 +21,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
   ceo: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+    { label: 'Cuisines', href: '/kitchen', icon: 'ChefHat', i18nKey: 'nav.kitchen' },
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
     { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
     { label: 'Production Sheets', href: '/production/sheets', icon: 'FileText', i18nKey: 'nav.production_sheets' },
@@ -150,6 +151,7 @@ const FULL_SIDEBAR: NavGroup[] = [
   ]},
   { label: 'Sales', i18nKey: 'nav.group_sales', items: [
     { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+    { label: 'Cuisines', href: '/kitchen', icon: 'ChefHat', i18nKey: 'nav.kitchen' },
     { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
     { label: 'Surveys', href: '/surveys', icon: 'Star', i18nKey: 'nav.surveys' },
   ]},
