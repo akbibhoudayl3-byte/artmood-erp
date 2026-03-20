@@ -14,7 +14,7 @@ import { useLocale } from '@/lib/hooks/useLocale';
 import {
   ArrowLeft, Phone, MapPin, Mail, Calendar, User, DollarSign,
   FileText, Clock, CheckCircle, CreditCard, Ruler, Palette, Factory, Truck, Printer, Upload,
-  BarChart3, Box, MessageCircle, Package, LayoutGrid, Pencil, X
+  BarChart3, Box, MessageCircle, Package, LayoutGrid, Pencil, X, ArrowRight, Scissors
 } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import ProjectMfgTabs from '@/components/projects/ProjectMfgTabs';
@@ -73,24 +73,52 @@ export default function ProjectDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editForm, setEditForm] = useState({ client_name: '', client_phone: '', client_email: '', client_address: '', client_city: '', total_amount: '', priority: 'normal', notes: '' });
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [workflowError, setWorkflowError] = useState('');
+  const [hasProduction, setHasProduction] = useState(false);
 
   useEffect(() => { loadAll(); }, [id]);
 
   async function loadAll() {
-    const [projRes, payRes, evtRes, quoteRes] = await Promise.all([
+    const [projRes, payRes, evtRes, quoteRes, prodRes] = await Promise.all([
       supabase.from('projects')
         .select('*, designer:profiles!projects_designer_id_fkey(full_name)')
         .eq('id', id).single(),
       supabase.from('payments').select('*').eq('project_id', id).order('received_at', { ascending: false }),
       supabase.from('project_events').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       supabase.from('quotes').select('*').eq('project_id', id).order('version', { ascending: false }),
+      supabase.from('production_orders').select('id').eq('project_id', id).limit(1),
     ]);
 
     setProject(projRes.data as ProjectDetail);
     setPayments(payRes.data || []);
     setEvents((evtRes.data as ProjectEvent[]) || []);
     setQuotes(quoteRes.data || []);
+    setHasProduction((prodRes.data || []).length > 0);
     setLoading(false);
+  }
+
+  async function handleGenerateProduction() {
+    setWorkflowBusy(true);
+    setWorkflowError('');
+    try {
+      const res = await fetch('/api/bom/generate-production', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: id }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setWorkflowError(data.error || 'Failed to generate production');
+        setWorkflowBusy(false);
+        return;
+      }
+      // Redirect to production page
+      router.push(`/projects/${id}/production`);
+    } catch {
+      setWorkflowError('Network error');
+      setWorkflowBusy(false);
+    }
   }
 
   function openEdit() {
@@ -297,6 +325,26 @@ export default function ProjectDetailPage() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Workflow: ONE primary action */}
+      {project && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent>
+            {workflowError && (
+              <p className="text-sm text-red-600 mb-2">{workflowError}</p>
+            )}
+            {hasProduction ? (
+              <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => router.push(`/projects/${id}/production`)}>
+                <Factory size={18} className="mr-2" /> Go to Production <ArrowRight size={18} className="ml-2" />
+              </Button>
+            ) : (
+              <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={handleGenerateProduction} disabled={workflowBusy}>
+                <Factory size={18} className="mr-2" /> {workflowBusy ? 'Generating...' : 'Generate Production'} <ArrowRight size={18} className="ml-2" />
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

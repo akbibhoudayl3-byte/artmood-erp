@@ -7,7 +7,7 @@ import { RoleGuard } from '@/components/auth/RoleGuard';
 import ProjectMfgTabs from '@/components/projects/ProjectMfgTabs';
 import {
   ArrowLeft, Download, Scissors, RefreshCw, CheckCircle,
-  AlertTriangle, Package, LayoutGrid, Zap,
+  AlertTriangle, Package, LayoutGrid, Zap, ArrowRight,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -218,6 +218,8 @@ function CuttingListContent() {
   const [error,           setError]           = useState<string | null>(null);
   const [generateError,   setGenerateError]   = useState<string | null>(null);
   const [missingParts,    setMissingParts]    = useState(0);
+  const [finishingCutting, setFinishingCutting] = useState(false);
+  const [finishError,     setFinishError]     = useState<string | null>(null);
 
   // ── Fetch project ──
   const fetchProject = useCallback(async () => {
@@ -402,6 +404,67 @@ function CuttingListContent() {
     },
     [entries, deductStockForSheet],
   );
+
+  // ── Finish Cutting: validate all cut, deduct remaining stock, mark production complete ──
+  const handleFinishCutting = useCallback(async () => {
+    setFinishingCutting(true);
+    setFinishError(null);
+
+    try {
+      // 1. Check all parts are cut
+      const uncutParts = entries.filter(
+        (e) => e.project_part_id && !partsCutMap.get(e.project_part_id),
+      );
+      if (uncutParts.length > 0) {
+        // Mark remaining parts as cut
+        const uncutIds = [...new Set(uncutParts.map((e) => e.project_part_id!).filter(Boolean))];
+        if (uncutIds.length > 0) {
+          await supabase.from('project_parts').update({ is_cut: true }).in('id', uncutIds);
+          setPartsCutMap((prev) => {
+            const next = new Map(prev);
+            for (const pid of uncutIds) next.set(pid, true);
+            return next;
+          });
+        }
+      }
+
+      // 2. Deduct stock for any sheets not yet deducted
+      const sheetKeys = new Set<string>();
+      for (const e of entries) {
+        sheetKeys.add(`${e.panel_type}__${e.sheet_number}`);
+      }
+      for (const key of sheetKeys) {
+        const [panelType, sheetNumStr] = key.split('__');
+        const sheetNumber = parseInt(sheetNumStr, 10);
+        const sheetEntries = entries.filter(
+          (e) => e.panel_type === panelType && e.sheet_number === sheetNumber,
+        );
+        await deductStockForSheet(panelType, sheetNumber, sheetEntries);
+      }
+
+      // 3. Mark production order as completed
+      const { data: prodOrders } = await supabase
+        .from('production_orders')
+        .select('id')
+        .eq('project_id', id)
+        .in('status', ['pending', 'in_progress'])
+        .limit(1);
+
+      if (prodOrders && prodOrders.length > 0) {
+        await supabase.from('production_orders').update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', prodOrders[0].id);
+      }
+
+      // 4. Redirect to project page
+      router.push(`/projects/${id}`);
+    } catch {
+      setFinishError('Erreur lors de la finalisation de la découpe.');
+      setFinishingCutting(false);
+    }
+  }, [entries, partsCutMap, deductStockForSheet, id, router]);
 
   // ── Derived stats ──
   const totalSheets = entries.length
@@ -783,6 +846,38 @@ function CuttingListContent() {
               </div>
             );
           })
+        )}
+
+        {/* ── Workflow: Finish Cutting ── */}
+        {!loadingEntries && entries.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 overflow-hidden">
+            <div className="px-5 py-4">
+              {finishError && (
+                <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-red-600 text-sm">{finishError}</p>
+                </div>
+              )}
+              <button
+                onClick={handleFinishCutting}
+                disabled={finishingCutting}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold rounded-xl transition-colors text-base"
+              >
+                {finishingCutting ? (
+                  <RefreshCw className="h-5 w-5 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-5 w-5" />
+                )}
+                {finishingCutting ? 'Finalisation en cours...' : 'Terminer la Découpe'}
+                {!finishingCutting && <ArrowRight className="h-5 w-5 ml-1" />}
+              </button>
+              {uncutCount > 0 && !finishingCutting && (
+                <p className="text-xs text-gray-500 text-center mt-2">
+                  {uncutCount} pièce(s) restante(s) seront marquées comme débitées
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Generate error (when already has entries but regeneration failed) */}

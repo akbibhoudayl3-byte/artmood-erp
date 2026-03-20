@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import Card, { CardHeader, CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { ArrowLeft, FileText, Calendar, User, Printer, Copy, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, FileText, Calendar, User, Printer, Copy, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -79,9 +79,13 @@ export default function QuoteDetailPage() {
     setLoading(false);
   }
 
+  const [accepting, setAccepting] = useState(false);
+
   async function updateStatus(status: string) {
     setActionError('');
     setSuccessMsg('');
+
+    if (status === 'accepted') setAccepting(true);
 
     try {
       const res = await fetch(`/api/quotes/${id}/status`, {
@@ -93,13 +97,17 @@ export default function QuoteDetailPage() {
       const data = await res.json();
       if (!res.ok) {
         showError(data.error || 'Failed to update quote status');
+        setAccepting(false);
         return;
       }
 
       if (data.warning) {
         showError(data.warning);
+        setAccepting(false);
       } else if (status === 'accepted') {
-        showSuccess('Quote accepted and project total synced to ' + (quote?.total_amount?.toLocaleString() || '') + ' MAD.');
+        // Workflow: Accept → redirect to project production page
+        router.push(`/projects/${quote?.project_id}/production`);
+        return;
       } else if (status === 'sent') {
         showSuccess('Quote marked as sent.');
       } else if (status === 'rejected') {
@@ -109,6 +117,7 @@ export default function QuoteDetailPage() {
       loadData();
     } catch {
       showError('Network error');
+      setAccepting(false);
     }
   }
 
@@ -263,21 +272,34 @@ export default function QuoteDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Actions */}
-      {quote.status !== 'accepted' && quote.status !== 'rejected' && (
-        <Card>
+      {/* Workflow: ONE primary action per status */}
+      {quote.status === 'draft' && (
+        <Card className="border-blue-200 bg-blue-50/50">
           <CardContent>
-            <div className="flex gap-2">
-              {quote.status === 'draft' && (
-                <Button variant="primary" className="flex-1" onClick={() => updateStatus('sent')}>{t('quotes.sent')}</Button>
-              )}
-              {quote.status === 'sent' && (
-                <>
-                  <Button variant="success" className="flex-1" onClick={() => updateStatus('accepted')}>{t('quotes.accepted')}</Button>
-                  <Button variant="danger" className="flex-1" onClick={() => updateStatus('rejected')}>{t('quotes.rejected')}</Button>
-                </>
-              )}
-            </div>
+            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => updateStatus('sent')}>
+              {t('quotes.sent')} <ArrowRight size={18} className="ml-2" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      {quote.status === 'sent' && (
+        <Card className="border-emerald-200 bg-emerald-50/50">
+          <CardContent className="space-y-2">
+            <Button variant="success" className="w-full py-3 text-base font-semibold" onClick={() => updateStatus('accepted')} disabled={accepting}>
+              {accepting ? 'Creating production...' : 'Accept & Start Production'} <ArrowRight size={18} className="ml-2" />
+            </Button>
+            <button className="w-full text-center text-xs text-red-400 hover:text-red-600 py-1" onClick={() => updateStatus('rejected')}>
+              Reject quote
+            </button>
+          </CardContent>
+        </Card>
+      )}
+      {quote.status === 'accepted' && (
+        <Card className="border-emerald-200 bg-emerald-50/50">
+          <CardContent>
+            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => router.push(`/projects/${quote.project_id}/production`)}>
+              Go to Production <ArrowRight size={18} className="ml-2" />
+            </Button>
           </CardContent>
         </Card>
       )}

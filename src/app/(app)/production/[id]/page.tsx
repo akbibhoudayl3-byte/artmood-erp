@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { PRODUCTION_STATIONS } from '@/lib/constants';
 import { useRealtime } from '@/lib/hooks/useRealtime';
-import { ArrowLeft, Clock, User, Factory, ScanLine, Printer } from 'lucide-react';
+import { ArrowLeft, Clock, User, Factory, ScanLine, Printer, ArrowRight, Scissors } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -85,10 +85,14 @@ export default function ProductionOrderDetailPage() {
     setScans((data as Scan[]) || []);
   }
 
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+
   async function startOrder() {
+    setWorkflowBusy(true);
     await supabase.from('production_orders').update({
       status: 'in_progress', started_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }).eq('id', id);
+    setWorkflowBusy(false);
     loadData();
   }
 
@@ -147,12 +151,38 @@ export default function ProductionOrderDetailPage() {
                 </div>
               )}
             </div>
-            {order.status === 'pending' && ['ceo', 'workshop_manager'].includes(profile?.role || '') && (
-              <Button variant="success" onClick={startOrder}>{t('production.start_production')}</Button>
-            )}
           </div>
         </CardContent>
       </Card>
+
+      {/* Workflow: ONE primary action per status */}
+      {order.status === 'pending' && (
+        <Card className="border-emerald-200 bg-emerald-50/50">
+          <CardContent>
+            <Button variant="success" className="w-full py-3 text-base font-semibold" onClick={startOrder} disabled={workflowBusy}>
+              <Factory size={18} className="mr-2" /> {workflowBusy ? 'Starting...' : 'Start Production'} <ArrowRight size={18} className="ml-2" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      {order.status === 'in_progress' && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent>
+            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => router.push(`/projects/${order.project_id}/cutting-list`)}>
+              <Scissors size={18} className="mr-2" /> Start Cutting <ArrowRight size={18} className="ml-2" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      {order.status === 'completed' && (
+        <Card className="border-emerald-200 bg-emerald-50/50">
+          <CardContent>
+            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => router.push(`/projects/${order.project_id}`)}>
+              Back to Project <ArrowRight size={18} className="ml-2" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Progress Bar */}
       {parts.length > 0 && (
