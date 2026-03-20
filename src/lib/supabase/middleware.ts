@@ -115,12 +115,16 @@ export async function updateSession(request: NextRequest) {
 
     role = profileData?.role as UserRole;
     if (role) {
+      // Cookie scoped to current hostname only (no parent domain leaking)
+      // This prevents artmood_role from being sent to artmood.ma or other subdomains
+      const hostname = request.headers.get('host')?.split(':')[0] || '';
       supabaseResponse.cookies.set('artmood_role', role, {
         httpOnly: true,
         secure: true, // app runs on HTTPS — cookie must be secure
-        sameSite: 'lax',
+        sameSite: 'strict', // strict: only sent for same-site navigations (not cross-subdomain)
         maxAge: 60 * 60 * 24 * 7, // 7 days
         path: '/',
+        domain: hostname, // explicit domain prevents parent-domain cookie leaking
       });
     }
   }
@@ -160,10 +164,13 @@ export async function updateSession(request: NextRequest) {
   supabaseResponse.headers.set('X-XSS-Protection', '1; mode=block');
   supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
 
-  // HSTS — force HTTPS for 1 year, include subdomains
+  // HSTS — force HTTPS for 1 year (ERP subdomain only, NOT parent domain)
+  // IMPORTANT: Do NOT use includeSubDomains or preload here.
+  // This app runs on erp.artmood.ma — includeSubDomains would force HTTPS
+  // on artmood.ma and all other subdomains, breaking the main site.
   supabaseResponse.headers.set(
     'Strict-Transport-Security',
-    'max-age=31536000; includeSubDomains; preload'
+    'max-age=31536000'
   );
 
   // Content Security Policy — restrict resource loading
@@ -173,9 +180,9 @@ export async function updateSession(request: NextRequest) {
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",   // Next.js needs inline + eval in dev
       "style-src 'self' 'unsafe-inline'",                   // Tailwind injects inline styles
-      `connect-src 'self' https://*.supabase.co wss://*.supabase.co`,  // Supabase API + Realtime
+      `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://fonts.googleapis.com`,  // Supabase API + Realtime + Fonts
       `img-src 'self' data: blob: https://*.supabase.co`,   // Supabase Storage images
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       "frame-ancestors 'none'",                              // Same as X-Frame-Options DENY
       "base-uri 'self'",
       "form-action 'self'",
