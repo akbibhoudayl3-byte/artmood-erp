@@ -150,46 +150,33 @@ export default function NewQuotePage() {
     if (!projectId || lines.some(l => !l.description.trim() || !l.unit_price)) return;
     setSaving(true);
 
-    // Get next version number for this project
-    const { data: existing } = await supabase
-      .from('quotes')
-      .select('version')
-      .eq('project_id', projectId)
-      .order('version', { ascending: false })
-      .limit(1);
+    try {
+      const res = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          discount_percent: discount,
+          valid_until: validUntil || null,
+          notes: notes || null,
+          lines: lines.map(l => ({
+            description: l.description.trim(),
+            quantity: parseFloat(l.quantity) || 1,
+            unit: l.unit || 'unit',
+            unit_price: parseFloat(l.unit_price) || 0,
+          })),
+        }),
+      });
 
-    const nextVersion = (existing?.[0]?.version || 0) + 1;
-
-    const { data: quote } = await supabase.from('quotes').insert({
-      project_id: projectId,
-      version: nextVersion,
-      status: 'draft',
-      subtotal,
-      discount_percent: discount,
-      discount_amount: discountAmount,
-      total_amount: total,
-      notes: notes || null,
-      valid_until: validUntil || null,
-      created_by: profile?.id,
-    }).select().single();
-
-    if (quote) {
-      const quoteLines = lines.map((l, i) => ({
-        quote_id: quote.id,
-        description: l.description.trim(),
-        quantity: parseFloat(l.quantity) || 1,
-        unit: l.unit || 'unit',
-        unit_price: parseFloat(l.unit_price) || 0,
-        total_price: (parseFloat(l.quantity) || 1) * (parseFloat(l.unit_price) || 0),
-        sort_order: i,
-      }));
-      await supabase.from('quote_lines').insert(quoteLines);
-
-      // Note: project total_amount is only updated when quote is accepted (in quote detail page)
-      // Draft quotes should not overwrite the project total
-
-      router.push(`/quotes/${quote.id}`);
-    } else {
+      const data = await res.json();
+      if (res.ok && data.quote) {
+        router.push(`/quotes/${data.quote.id}`);
+      } else {
+        alert(data.error || 'Failed to create quote');
+        setSaving(false);
+      }
+    } catch {
+      alert('Network error');
       setSaving(false);
     }
   }

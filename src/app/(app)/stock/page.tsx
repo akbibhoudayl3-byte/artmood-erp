@@ -221,14 +221,13 @@ export default function StockPage() {
     setSaving(true);
     setErrorMsg('');
 
-    const payload = {
+    const payload: Record<string, any> = {
       name: form.name.trim(),
       sku: form.sku.trim() || null,
       category: form.category,
       subcategory: form.subcategory.trim() || null,
       unit: form.unit.trim() || 'pcs',
       minimum_quantity: parseInt(form.minimum_quantity) || 0,
-      low_stock_threshold: parseInt(form.minimum_quantity) || 0,
       cost_per_unit: form.cost_per_unit ? parseFloat(form.cost_per_unit) : null,
       thickness_mm: form.thickness_mm ? parseFloat(form.thickness_mm) : null,
       sheet_length_mm: form.sheet_length_mm ? parseFloat(form.sheet_length_mm) : null,
@@ -238,22 +237,30 @@ export default function StockPage() {
       notes: form.notes.trim() || null,
     };
 
-    let opError;
-    if (modal === 'edit' && selectedItem) {
-      const { error } = await supabase.from('stock_items').update(payload).eq('id', selectedItem.id);
-      opError = error;
-    } else {
-      const { error } = await supabase.from('stock_items').insert({ ...payload, current_quantity: 0 });
-      opError = error;
+    try {
+      const isEdit = modal === 'edit' && selectedItem;
+      const res = await fetch('/api/stock/items', {
+        method: isEdit ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isEdit ? { ...payload, id: selectedItem.id } : payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.error || 'Error saving item');
+        setSaving(false);
+        return;
+      }
+
+      setSuccessMsg(isEdit ? 'Item updated.' : 'Item added.');
+      setTimeout(() => setSuccessMsg(''), 3000);
+      setModal(null);
+      setSaving(false);
+      await Promise.all([loadStock(page, search, filterCategory), loadSummary()]);
+    } catch {
+      setErrorMsg('Network error');
+      setSaving(false);
     }
-
-    if (opError) { setErrorMsg('Error saving item: ' + opError.message); setSaving(false); return; }
-
-    setSuccessMsg(modal === 'edit' ? 'Item updated.' : 'Item added.');
-    setTimeout(() => setSuccessMsg(''), 3000);
-    setModal(null);
-    setSaving(false);
-    await Promise.all([loadStock(page, search, filterCategory), loadSummary()]);
   }
 
   async function deleteItem(item: StockItem) {
@@ -286,29 +293,38 @@ export default function StockPage() {
 
     const dbMovType = movType === 'in' ? 'in' : movType === 'out' ? 'out' : 'adjustment';
 
-    const { error } = await supabase.from('stock_movements').insert({
-      stock_item_id: selectedItem.id,
-      movement_type: dbMovType,
-      quantity: signedQty,
-      notes: movNotes.trim() || null,
-      created_by: profile?.id,
-    });
+    try {
+      const res = await fetch('/api/stock/movements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stock_item_id: selectedItem.id,
+          movement_type: dbMovType,
+          quantity: signedQty,
+          notes: movNotes.trim() || null,
+        }),
+      });
 
-    if (error) {
-      if (error.message?.includes('negative') || error.message?.includes('cannot go')) {
-        setErrorMsg(`Insufficient stock. Available: ${selectedItem.current_quantity} ${selectedItem.unit}. Cannot remove ${qty}.`);
-      } else {
-        setErrorMsg('Stock movement error: ' + error.message);
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error?.includes('Insufficient') || data.available !== undefined) {
+          setErrorMsg(`Insufficient stock. Available: ${data.available ?? selectedItem.current_quantity} ${selectedItem.unit}. Cannot remove ${qty}.`);
+        } else {
+          setErrorMsg(data.error || 'Stock movement error');
+        }
+        setSaving(false);
+        return;
       }
-      setSaving(false);
-      return;
-    }
 
-    setSuccessMsg(`Stock ${movType === 'in' ? 'added' : movType === 'out' ? 'removed' : 'adjusted'} successfully.`);
-    setTimeout(() => setSuccessMsg(''), 3000);
-    setModal(null);
-    setSaving(false);
-    await Promise.all([loadStock(page, search, filterCategory), loadSummary()]);
+      setSuccessMsg(`Stock ${movType === 'in' ? 'added' : movType === 'out' ? 'removed' : 'adjusted'} successfully.`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+      setModal(null);
+      setSaving(false);
+      await Promise.all([loadStock(page, search, filterCategory), loadSummary()]);
+    } catch {
+      setErrorMsg('Network error');
+      setSaving(false);
+    }
   }
 
   return (

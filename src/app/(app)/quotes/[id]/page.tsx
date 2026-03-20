@@ -83,45 +83,33 @@ export default function QuoteDetailPage() {
     setActionError('');
     setSuccessMsg('');
 
-    const updatePayload: Record<string, any> = {
-      status,
-      updated_at: new Date().toISOString(),
-      ...(status === 'sent' ? { sent_at: new Date().toISOString() } : {}),
-      ...(status === 'accepted' || status === 'rejected' ? { responded_at: new Date().toISOString() } : {}),
-    };
+    try {
+      const res = await fetch(`/api/quotes/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
 
-    const { error: quoteErr } = await supabase
-      .from('quotes')
-      .update(updatePayload)
-      .eq('id', id);
-
-    if (quoteErr) {
-      showError('Failed to update quote status: ' + quoteErr.message);
-      return;
-    }
-
-    // When accepted, also sync total_amount to the linked project
-    if (status === 'accepted' && quote?.project_id && quote?.total_amount != null) {
-      const { error: projectErr } = await supabase
-        .from('projects')
-        .update({
-          total_amount: quote.total_amount,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', quote.project_id);
-
-      if (projectErr) {
-        showError('Quote accepted, but failed to sync project total: ' + projectErr.message);
-      } else {
-        showSuccess('Quote accepted and project total synced to ' + quote.total_amount.toLocaleString() + ' MAD.');
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || 'Failed to update quote status');
+        return;
       }
-    } else if (status === 'sent') {
-      showSuccess('Quote marked as sent.');
-    } else if (status === 'rejected') {
-      showSuccess('Quote marked as rejected.');
-    }
 
-    loadData();
+      if (data.warning) {
+        showError(data.warning);
+      } else if (status === 'accepted') {
+        showSuccess('Quote accepted and project total synced to ' + (quote?.total_amount?.toLocaleString() || '') + ' MAD.');
+      } else if (status === 'sent') {
+        showSuccess('Quote marked as sent.');
+      } else if (status === 'rejected') {
+        showSuccess('Quote marked as rejected.');
+      }
+
+      loadData();
+    } catch {
+      showError('Network error');
+    }
   }
 
   async function handleDuplicate() {
@@ -131,68 +119,21 @@ export default function QuoteDetailPage() {
     setSuccessMsg('');
 
     try {
-      // Get the max version for this project's quotes
-      const { data: existingQuotes } = await supabase
-        .from('quotes')
-        .select('version')
-        .eq('project_id', quote.project_id)
-        .order('version', { ascending: false })
-        .limit(1);
+      const res = await fetch(`/api/quotes/${id}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-      const nextVersion = existingQuotes && existingQuotes.length > 0
-        ? existingQuotes[0].version + 1
-        : quote.version + 1;
-
-      // Duplicate the quote header
-      const { data: newQuote, error: newQuoteErr } = await supabase
-        .from('quotes')
-        .insert({
-          project_id: quote.project_id,
-          version: nextVersion,
-          status: 'draft',
-          subtotal: quote.subtotal,
-          discount_percent: quote.discount_percent,
-          discount_amount: quote.discount_amount,
-          total_amount: quote.total_amount,
-          notes: quote.notes,
-          valid_until: quote.valid_until,
-          created_by: profile?.id,
-        })
-        .select('id')
-        .single();
-
-      if (newQuoteErr || !newQuote) {
-        showError('Failed to duplicate quote: ' + (newQuoteErr?.message || 'Unknown error'));
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || 'Failed to duplicate quote');
         setDuplicating(false);
         return;
       }
 
-      // Duplicate all lines
-      if (lines.length > 0) {
-        const duplicatedLines = lines.map(line => ({
-          quote_id: newQuote.id,
-          description: line.description,
-          quantity: line.quantity,
-          unit: line.unit,
-          unit_price: line.unit_price,
-          total_price: line.total_price,
-          sort_order: line.sort_order,
-        }));
-
-        const { error: linesErr } = await supabase
-          .from('quote_lines')
-          .insert(duplicatedLines);
-
-        if (linesErr) {
-          showError('Quote duplicated but lines failed to copy: ' + linesErr.message);
-          setDuplicating(false);
-          return;
-        }
-      }
-
-      showSuccess(`Quote duplicated as v${nextVersion}. Navigating...`);
+      showSuccess(`Quote duplicated as v${data.quote.version}. Navigating...`);
       setTimeout(() => {
-        router.push(`/quotes/${newQuote.id}`);
+        router.push(`/quotes/${data.quote.id}`);
       }, 1200);
     } catch (err: any) {
       showError(err?.message || 'An unexpected error occurred.');

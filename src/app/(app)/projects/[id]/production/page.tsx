@@ -196,23 +196,31 @@ export default function ProjectProductionPage() {
   async function createOrder() {
     if (!newOrderName.trim()) return;
     setSavingOrder(true);
-    const { data, error } = await supabase.from('production_orders').insert({
-      project_id: id,
-      name: newOrderName.trim(),
-      notes: newOrderNotes || null,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-    }).select().single();
 
-    if (!error && data) {
-      setOrders(prev => [data as ProductionOrderItem, ...prev]);
-      setSelectedOrder(data as ProductionOrderItem);
-      setTab('materials');
-      setShowNewOrder(false);
-      setNewOrderName('');
-      setNewOrderNotes('');
-    } else {
-      alert('Error: ' + (error?.message || 'Unknown'));
+    try {
+      const res = await fetch('/api/production-orders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: id,
+          name: newOrderName.trim(),
+          notes: newOrderNotes || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.order) {
+        setOrders(prev => [data.order as ProductionOrderItem, ...prev]);
+        setSelectedOrder(data.order as ProductionOrderItem);
+        setTab('materials');
+        setShowNewOrder(false);
+        setNewOrderName('');
+        setNewOrderNotes('');
+      } else {
+        alert('Error: ' + (data.error || 'Unknown'));
+      }
+    } catch {
+      alert('Network error');
     }
     setSavingOrder(false);
   }
@@ -234,40 +242,35 @@ export default function ProjectProductionPage() {
 
     setSavingReq(true);
 
-    // Reserve stock
-    const { error: reserveErr } = await supabase
-      .from('stock_items')
-      .update({ reserved_quantity: mat.reserved_quantity + qty })
-      .eq('id', reqMaterialId);
-
-    if (reserveErr) {
-      alert('Erreur réservation stock: ' + reserveErr.message);
-      setSavingReq(false);
-      return;
-    }
-
-    // Create requirement
-    const { error: reqErr } = await supabase
-      .from('production_material_requirements')
-      .insert({
-        production_order_id: selectedOrder.id,
-        material_id: reqMaterialId,
-        planned_qty: qty,
-        unit: reqUnit || mat.unit,
-        status: 'reserved',
-        notes: reqNotes || null,
+    try {
+      const res = await fetch('/api/production-orders/requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: id,
+          production_order_id: selectedOrder.id,
+          material_id: reqMaterialId,
+          planned_qty: qty,
+          unit: reqUnit || mat.unit,
+          notes: reqNotes || null,
+          current_reserved_quantity: mat.reserved_quantity,
+        }),
       });
 
-    if (!reqErr) {
-      await loadRequirements(selectedOrder.id);
-      await loadStock();
-      setShowAddReq(false);
-      setReqMaterialId('');
-      setReqQty('');
-      setReqUnit('');
-      setReqNotes('');
-    } else {
-      alert('Erreur: ' + reqErr.message);
+      const data = await res.json();
+      if (res.ok) {
+        await loadRequirements(selectedOrder.id);
+        await loadStock();
+        setShowAddReq(false);
+        setReqMaterialId('');
+        setReqQty('');
+        setReqUnit('');
+        setReqNotes('');
+      } else {
+        alert('Erreur: ' + (data.error || 'Unknown'));
+      }
+    } catch {
+      alert('Erreur réseau');
     }
     setSavingReq(false);
   }
@@ -370,53 +373,47 @@ export default function ProjectProductionPage() {
     if (!selectedOrder || bomSuggestions.length === 0) return;
     setImportingBom(true);
 
-    // Track running reserved_quantity per item within this batch to avoid stale reads
-    // when the same stock item appears multiple times in the BOM.
-    const reservedAccumulator: Record<string, number> = {};
+    try {
+      const requirements = bomSuggestions
+        .filter(sug => sug.stockItemId)
+        .map(sug => {
+          const mat = stockOptions.find(s => s.id === sug.stockItemId);
+          return {
+            production_order_id: selectedOrder.id,
+            material_id: sug.stockItemId!,
+            planned_qty: sug.sheets_needed,
+            unit: sug.unit,
+            notes: `BOM: ${sug.material} — ${sug.area_m2 > 0 ? sug.area_m2.toFixed(2) + ' m²' : sug.sheets_needed + ' ' + sug.unit}`,
+            current_reserved_quantity: mat?.reserved_quantity ?? 0,
+          };
+        });
 
-    for (const sug of bomSuggestions) {
-      if (!sug.stockItemId) continue;
-      const mat = stockOptions.find(s => s.id === sug.stockItemId);
-      if (!mat) continue;
+      if (requirements.length === 0) {
+        setImportingBom(false);
+        return;
+      }
 
-      // Use accumulator to get correct current reserved total for this item
-      const currentReserved = reservedAccumulator[sug.stockItemId] ?? mat.reserved_quantity;
-      const newReserved = currentReserved + sug.sheets_needed;
-      reservedAccumulator[sug.stockItemId] = newReserved;
-
-      // Reserve stock
-      await supabase
-        .from('stock_items')
-        .update({ reserved_quantity: newReserved })
-        .eq('id', sug.stockItemId);
-
-      // Create a reserve stock movement for audit trail
-      await supabase.from('stock_movements').insert({
-        stock_item_id: sug.stockItemId,
-        movement_type: 'reserve',
-        quantity: 0,
-        reference_type: 'production_order',
-        reference_id: selectedOrder.id,
-        project_id: id,
-        notes: `BOM réservation: ${sug.sheets_needed} ${sug.unit} ${mat.name} | Ordre: ${selectedOrder.name || ''}`,
-        created_by: profile?.id,
+      const res = await fetch('/api/production-orders/requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: id,
+          requirements,
+        }),
       });
 
-      // Create requirement
-      await supabase.from('production_material_requirements').insert({
-        production_order_id: selectedOrder.id,
-        material_id: sug.stockItemId,
-        planned_qty: sug.sheets_needed,
-        unit: sug.unit,
-        status: 'reserved',
-        notes: `BOM: ${sug.material} — ${sug.area_m2 > 0 ? sug.area_m2.toFixed(2) + ' m²' : sug.sheets_needed + ' ' + sug.unit}`,
-      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert('Erreur import BOM: ' + (data.error || 'Unknown'));
+      }
+
+      await loadRequirements(selectedOrder.id);
+      await loadStock();
+      setShowBomImport(false);
+      setTab('materials');
+    } catch {
+      alert('Erreur réseau');
     }
-
-    await loadRequirements(selectedOrder.id);
-    await loadStock();
-    setShowBomImport(false);
-    setTab('materials');
     setImportingBom(false);
   }
 
@@ -427,113 +424,50 @@ export default function ProjectProductionPage() {
 
     setConfirming(true);
 
-    // 1. Check stock won't go negative (used - waste = net consumption)
-    const mat = req.material;
-    const netConsumption = usedQty; // total consumed (waste is part of used)
+    try {
+      const res = await fetch('/api/production-orders/consume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requirement_id: req.id,
+          production_order_id: selectedOrder?.id,
+          project_id: id,
+          material_id: req.material_id,
+          used_qty: usedQty,
+          waste_qty: wasteQty,
+          unit: req.unit,
+          stage: confirmStage,
+          notes: confirmNotes || null,
+          order_name: selectedOrder?.name || '',
+          material_name: req.material?.name || 'unknown',
+          planned_qty: req.planned_qty,
+          reserved_quantity: req.material?.reserved_quantity ?? 0,
+          current_quantity: req.material?.current_quantity ?? 0,
+        }),
+      });
 
-    if (mat && netConsumption > mat.current_quantity) {
-      alert(`❌ Stock insuffisant!\nDisponible: ${mat.current_quantity} ${mat.unit}\nConsommé: ${netConsumption} ${mat.unit}`);
-      setConfirming(false);
-      return;
-    }
-
-    // 2. Insert stock_movement (negative quantity → triggers deduction)
-    const { data: movement, error: movErr } = await supabase
-      .from('stock_movements')
-      .insert({
-        stock_item_id: req.material_id,
-        movement_type: 'production_out',
-        quantity: -netConsumption, // negative triggers stock deduction via trigger
-        reference_type: 'production_order',
-        reference_id: selectedOrder?.id,
-        project_id: id,
-        notes: `Production: ${selectedOrder?.name || ''} | Stage: ${confirmStage}${confirmNotes ? ' | ' + confirmNotes : ''}`,
-        created_by: profile?.id,
-      })
-      .select('id')
-      .single();
-
-    if (movErr) {
-      // Check if it's a negative stock error from trigger
-      if (movErr.message.includes('negative')) {
-        alert('❌ Stock insuffisant — opération annulée');
-      } else {
-        alert('Erreur mouvement stock: ' + movErr.message);
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error?.includes('Insufficient') || data.available !== undefined) {
+          alert(`❌ Stock insuffisant!\nDisponible: ${data.available ?? '?'} ${data.unit ?? req.unit}\nConsommé: ${usedQty} ${req.unit}`);
+        } else {
+          alert(data.error || 'Erreur consommation');
+        }
+        setConfirming(false);
+        return;
       }
+
+      await loadRequirements(selectedOrder!.id);
+      await loadStock();
+      setConfirmingId(null);
+      setConfirmUsed('');
+      setConfirmWaste('0');
+      setConfirmNotes('');
       setConfirming(false);
-      return;
-    }
-
-    // 3. Create usage record
-    const { error: useErr } = await supabase
-      .from('production_material_usage')
-      .insert({
-        production_order_id: selectedOrder?.id,
-        requirement_id: req.id,
-        material_id: req.material_id,
-        used_qty: usedQty,
-        waste_qty: wasteQty,
-        unit: req.unit,
-        stage: confirmStage,
-        worker_id: profile?.id,
-        movement_id: movement?.id || null,
-        notes: confirmNotes || null,
-      });
-
-    if (useErr) {
-      alert('Erreur usage: ' + useErr.message);
+    } catch {
+      alert('Erreur réseau');
       setConfirming(false);
-      return;
     }
-
-    // 3b. Create waste_record for physical waste tracking (feeds into v_project_material_waste offcut_agg)
-    if (wasteQty > 0 && req.material) {
-      await supabase.from('waste_records').insert({
-        sheet_id: null,
-        production_order_id: selectedOrder?.id,
-        project_id: id,
-        material: req.material.name,
-        length_mm: 1000,
-        width_mm: Math.round(wasteQty * 1000),
-        is_reusable: false,
-        notes: `Production waste: ${wasteQty} ${req.unit} | Order: ${selectedOrder?.name || ''} | Stage: ${confirmStage}`,
-        created_by: profile?.id,
-      });
-    }
-
-    // 3c. Audit marker for waste in stock_movements (no additional deduction — already in production_out)
-    if (wasteQty > 0) {
-      await supabase.from('stock_movements').insert({
-        stock_item_id: req.material_id,
-        movement_type: 'production_waste',
-        quantity: 0,
-        reference_type: 'production_order',
-        reference_id: selectedOrder?.id,
-        project_id: id,
-        notes: `Waste: ${wasteQty} ${req.unit} from ${req.material?.name || 'unknown'} | Stage: ${confirmStage}`,
-        created_by: profile?.id,
-      });
-    }
-
-    // 4. Update requirement status + release reservation
-    if (mat) {
-      await Promise.all([
-        supabase.from('production_material_requirements')
-          .update({ status: 'consumed' })
-          .eq('id', req.id),
-        supabase.from('stock_items')
-          .update({ reserved_quantity: Math.max(0, mat.reserved_quantity - req.planned_qty) })
-          .eq('id', req.material_id),
-      ]);
-    }
-
-    await loadRequirements(selectedOrder!.id);
-    await loadStock();
-    setConfirmingId(null);
-    setConfirmUsed('');
-    setConfirmWaste('0');
-    setConfirmNotes('');
-    setConfirming(false);
   }
 
   async function generateFromBom() {
