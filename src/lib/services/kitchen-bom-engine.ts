@@ -104,36 +104,34 @@ export function generateBOM(
     });
 
     // ── Bottom ──
-    if (rule.has_bottom) {
-      if (rule.construction_type === 'sink') {
-        // Sink: aluminium panel instead of MDF
-        panels.push({
-          module_instance_id: iid,
-          part_name: 'bottom',
-          description: `Fond alu évier ${mod.label}`,
-          material: 'aluminium',
-          width_mm: W - 2 * T,
-          height_mm: D,
-          thickness_mm: THICKNESS.aluminium,
-          qty: 1,
-          edge_top: false, edge_bottom: false, edge_left: false, edge_right: false,
-        });
-      } else {
-        panels.push({
-          module_instance_id: iid,
-          part_name: 'bottom',
-          description: `Bas ${mod.label}`,
-          material: 'structure',
-          width_mm: W - 2 * T,
-          height_mm: D,
-          thickness_mm: T,
-          qty: 1,
-          edge_top: true,
-          edge_bottom: false,
-          edge_left: false,
-          edge_right: false,
-        });
-      }
+    if (rule.construction_type === 'sink') {
+      // Sink: ALWAYS add aluminium panel (replaces MDF bottom)
+      panels.push({
+        module_instance_id: iid,
+        part_name: 'bottom',
+        description: `Fond alu évier ${mod.label}`,
+        material: 'aluminium',
+        width_mm: W - 2 * T,
+        height_mm: D,
+        thickness_mm: THICKNESS.aluminium,
+        qty: 1,
+        edge_top: false, edge_bottom: false, edge_left: false, edge_right: false,
+      });
+    } else if (rule.has_bottom) {
+      panels.push({
+        module_instance_id: iid,
+        part_name: 'bottom',
+        description: `Bas ${mod.label}`,
+        material: 'structure',
+        width_mm: W - 2 * T,
+        height_mm: D,
+        thickness_mm: T,
+        qty: 1,
+        edge_top: true,
+        edge_bottom: false,
+        edge_left: false,
+        edge_right: false,
+      });
     }
 
     // ── Top ──

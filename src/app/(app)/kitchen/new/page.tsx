@@ -136,14 +136,16 @@ export default function KitchenPipelinePage() {
   const autoPlaceModules = (savedWalls: KitchenWall[]) => {
     const placed: typeof placedModules = [];
     const base600 = availableModules.find(m => m.code === 'BASE_600');
+    const base400 = availableModules.find(m => m.code === 'BASE_400');
+    const base300 = availableModules.find(m => m.code === 'BASE_300');
     const sink600 = availableModules.find(m => m.code === 'SINK_600');
+    const wall600 = availableModules.find(m => m.code === 'WALL_600');
 
     for (const wall of savedWalls) {
       let remaining = wall.wall_length_mm;
-      let addedSink = false;
 
       // Add a sink to first wall
-      if (!addedSink && sink600 && remaining >= 600 && wall === savedWalls[0]) {
+      if (sink600 && remaining >= 600 && wall === savedWalls[0]) {
         placed.push({
           wall_id: wall.id,
           module_id: sink600.id,
@@ -153,7 +155,6 @@ export default function KitchenPipelinePage() {
           facade_override: null,
         });
         remaining -= 600;
-        addedSink = true;
       }
 
       // Fill rest with base 600
@@ -169,18 +170,36 @@ export default function KitchenPipelinePage() {
         remaining -= 600;
       }
 
-      // If remaining >= 300, add a smaller module
-      if (remaining >= 300) {
-        const smaller = availableModules.find(m => m.type === 'base' && m.default_width <= remaining);
-        if (smaller) {
+      // Try 400mm then 300mm for leftovers
+      if (remaining >= 400 && base400) {
+        placed.push({
+          wall_id: wall.id, module_id: base400.id,
+          width_mm: 400, height_mm: DEFAULT_DIMENSIONS.base.height,
+          depth_mm: DEFAULT_DIMENSIONS.base.depth, facade_override: null,
+        });
+        remaining -= 400;
+      } else if (remaining >= 300 && base300) {
+        placed.push({
+          wall_id: wall.id, module_id: base300.id,
+          width_mm: 300, height_mm: DEFAULT_DIMENSIONS.base.height,
+          depth_mm: DEFAULT_DIMENSIONS.base.depth, facade_override: null,
+        });
+        remaining -= 300;
+      }
+
+      // Auto-add wall cabinets if full-height mode
+      if (kitchen.full_height && wall600) {
+        let wallRemaining = wall.wall_length_mm;
+        while (wallRemaining >= 600) {
           placed.push({
             wall_id: wall.id,
-            module_id: smaller.id,
-            width_mm: smaller.default_width,
-            height_mm: DEFAULT_DIMENSIONS.base.height,
-            depth_mm: DEFAULT_DIMENSIONS.base.depth,
+            module_id: wall600.id,
+            width_mm: 600,
+            height_mm: DEFAULT_DIMENSIONS.wall.height,
+            depth_mm: DEFAULT_DIMENSIONS.wall.depth,
             facade_override: null,
           });
+          wallRemaining -= 600;
         }
       }
     }
@@ -207,7 +226,35 @@ export default function KitchenPipelinePage() {
   }, [kitchenId, placedModules]);
 
   const saveOptions = () => setStep(5);
-  const saveCustomization = () => setStep(6);
+
+  const saveCustomization = useCallback(async () => {
+    if (!kitchenId) { setStep(6); return; }
+    // Save facade overrides back to the server
+    const modsToSave = savedModules.map(m => ({
+      wall_id: m.wall_id,
+      module_id: m.module_id,
+      width_mm: m.width_mm,
+      height_mm: m.height_mm,
+      depth_mm: m.depth_mm,
+      facade_override: m.facade_override,
+    }));
+    setLoading(true);
+    try {
+      const data = await api<{ modules: KitchenModuleInstance[] }>('/api/kitchen/place-modules', {
+        kitchen_id: kitchenId,
+        modules: modsToSave,
+      });
+      setSavedModules(data.modules);
+      setStep(6);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId, savedModules]);
+
+  const [detectionDone, setDetectionDone] = useState(false);
+  const [pendingFillers, setPendingFillers] = useState<{ wall_id: string; wall_name: string; gap_mm: number; side: 'left' | 'right' }[]>([]);
 
   const runDetection = useCallback(async () => {
     if (!kitchenId) return;
@@ -220,28 +267,47 @@ export default function KitchenPipelinePage() {
       setValidation(data.validation);
       setFillerSuggestions(data.fillerSuggestions);
 
-      // Auto-create fillers from suggestions
-      const autoFillers = data.fillerSuggestions
+      // Prepare fillers for user confirmation (don't save yet)
+      const pf = data.fillerSuggestions
         .filter(s => s.suggestion === 'filler_needed')
         .map(s => ({
           wall_id: s.wall_id,
+          wall_name: s.wall_name,
+          gap_mm: s.gap_mm,
           side: 'right' as const,
-          width_mm: s.gap_mm,
-          height_mm: DEFAULT_DIMENSIONS.base.height,
-          depth_mm: DEFAULT_DIMENSIONS.base.depth,
         }));
-
-      if (autoFillers.length > 0) {
-        await api('/api/kitchen/fillers', { kitchen_id: kitchenId, fillers: autoFillers });
-      }
-
-      setStep(7);
+      setPendingFillers(pf);
+      setDetectionDone(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Error');
     } finally {
       setLoading(false);
     }
   }, [kitchenId]);
+
+  const confirmFillers = useCallback(async () => {
+    if (!kitchenId) return;
+    setLoading(true);
+    try {
+      const fillersToSave = pendingFillers
+        .filter(f => f.gap_mm > 0)
+        .map(f => ({
+          wall_id: f.wall_id,
+          side: f.side,
+          width_mm: f.gap_mm,
+          height_mm: DEFAULT_DIMENSIONS.base.height,
+          depth_mm: DEFAULT_DIMENSIONS.base.depth,
+        }));
+      if (fillersToSave.length > 0) {
+        await api('/api/kitchen/fillers', { kitchen_id: kitchenId, fillers: fillersToSave });
+      }
+      setStep(7);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }, [kitchenId, pendingFillers]);
 
   const computePrice = useCallback(async () => {
     if (!kitchenId) return;
@@ -617,15 +683,81 @@ export default function KitchenPipelinePage() {
         </Card>
       )}
 
-      {/* ── STEP 6: Auto Detection ── */}
+      {/* ── STEP 6: Auto Detection + Filler Confirmation ── */}
       {step === 6 && (
         <Card>
           <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Détection Automatique</h2></CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-[#64648B]">Le système détecte automatiquement les fillers, le système spider, et les panneaux aluminium évier.</p>
-            <Button onClick={runDetection} loading={loading} fullWidth size="lg" variant="accent">
-              Lancer la détection <CheckCircle className="w-4 h-4" />
-            </Button>
+            {!detectionDone ? (
+              <>
+                <p className="text-sm text-[#64648B]">Le système détecte automatiquement les fillers, le système spider, et les panneaux aluminium évier.</p>
+                <Button onClick={runDetection} loading={loading} fullWidth size="lg" variant="accent">
+                  Lancer la détection <CheckCircle className="w-4 h-4" />
+                </Button>
+              </>
+            ) : (
+              <>
+                {/* Detection Results */}
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-[#1a1a2e]">Résultats</h3>
+                  {fillerSuggestions.map((f, i) => (
+                    <div key={i} className={`flex items-center gap-2 p-2.5 rounded-lg text-sm ${
+                      f.suggestion === 'ok' ? 'bg-emerald-50 text-emerald-700' :
+                      f.suggestion === 'overflow' ? 'bg-red-50 text-red-700' :
+                      'bg-amber-50 text-amber-700'
+                    }`}>
+                      {f.suggestion === 'ok' ? <CheckCircle className="w-4 h-4 flex-shrink-0" /> :
+                       f.suggestion === 'overflow' ? <AlertCircle className="w-4 h-4 flex-shrink-0" /> :
+                       <AlertTriangle className="w-4 h-4 flex-shrink-0" />}
+                      <span>{f.message}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Auto-detected features */}
+                <div className="bg-[#FAFAF8] rounded-xl p-3 space-y-2 text-sm">
+                  <h3 className="font-semibold text-[#1a1a2e]">Éléments auto-détectés</h3>
+                  <div className="flex items-center gap-2 text-[#4A4A6A]">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                    Panneaux aluminium évier (modules évier)
+                  </div>
+                  <div className="flex items-center gap-2 text-[#4A4A6A]">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                    Système spider + rail (modules hauts)
+                  </div>
+                  <div className="flex items-center gap-2 text-[#4A4A6A]">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                    Système tiroir aluminium (modules tiroir)
+                  </div>
+                </div>
+
+                {/* Filler confirmation */}
+                {pendingFillers.length > 0 && (
+                  <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-3">
+                    <h3 className="text-sm font-semibold text-amber-800">Fillers à confirmer</h3>
+                    {pendingFillers.map((f, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className="text-sm text-amber-700 flex-1">
+                          Mur {f.wall_name}: {f.gap_mm}mm
+                        </span>
+                        <select value={f.side}
+                          onChange={e => setPendingFillers(prev => prev.map((ff, ii) =>
+                            ii === i ? { ...ff, side: e.target.value as 'left' | 'right' } : ff
+                          ))}
+                          className="px-2 py-1 border border-amber-300 rounded-lg text-xs bg-white">
+                          <option value="right">Droite</option>
+                          <option value="left">Gauche</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button onClick={confirmFillers} loading={loading} fullWidth size="lg">
+                  {pendingFillers.length > 0 ? 'Confirmer les fillers' : 'Continuer'} <ArrowRight className="w-4 h-4" />
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       )}
@@ -635,24 +767,9 @@ export default function KitchenPipelinePage() {
         <Card>
           <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Calcul du Prix</h2></CardHeader>
           <CardContent className="space-y-4">
-            {fillerSuggestions.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-[#1a1a2e]">Fillers détectés</h3>
-                {fillerSuggestions.map((f, i) => (
-                  <div key={i} className={`flex items-center gap-2 p-2 rounded-lg text-xs ${
-                    f.suggestion === 'ok' ? 'bg-emerald-50 text-emerald-700' :
-                    f.suggestion === 'overflow' ? 'bg-red-50 text-red-700' :
-                    'bg-amber-50 text-amber-700'
-                  }`}>
-                    {f.suggestion === 'ok' ? <CheckCircle className="w-3.5 h-3.5" /> :
-                     f.suggestion === 'overflow' ? <AlertCircle className="w-3.5 h-3.5" /> :
-                     <AlertTriangle className="w-3.5 h-3.5" />}
-                    {f.message}
-                  </div>
-                ))}
-              </div>
-            )}
-
+            <p className="text-sm text-[#64648B]">
+              Le système calcule le coût total incluant: matériaux, quincaillerie, main d&apos;oeuvre, marge ({MARGIN_RULES[kitchen.client_type as ClientType ?? 'standard']}%), et TVA.
+            </p>
             <Button onClick={computePrice} loading={loading} fullWidth size="lg" variant="accent">
               Calculer le prix <ArrowRight className="w-4 h-4" />
             </Button>
