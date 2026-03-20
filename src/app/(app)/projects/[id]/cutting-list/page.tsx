@@ -421,67 +421,44 @@ function CuttingListContent() {
     fetchEntries();
   }, [fetchProject, fetchEntries]);
 
-  // ── Generate cutting list ──
+  // ── Generate cutting list via server-side nesting engine ──
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
     setGenerateError(null);
 
-    // 1. Fetch all project_parts
-    const { data: parts, error: partsErr } = await supabase
-      .from('project_parts')
-      .select('*')
-      .eq('project_id', id);
+    try {
+      const res = await fetch('/api/cutting/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: id }),
+      });
 
-    if (partsErr || !parts?.length) {
-      setGenerateError(
-        partsErr
-          ? 'Erreur lors de la récupération des pièces.'
-          : 'Aucune pièce trouvée pour ce projet. Générez d\'abord les pièces depuis l\'onglet Modules.',
-      );
-      setGenerating(false);
-      return;
-    }
+      const data = await res.json();
 
-    // 2. Delete existing cutting list for this project
-    await supabase.from('cutting_list').delete().eq('project_id', id);
-
-    // 3. Pack parts into sheets (real 2D guillotine bin packing)
-    const { packed, missingCount } = packParts(parts as ProjectPart[]);
-
-    setMissingParts(missingCount);
-    if (missingCount > 0) {
-      setGenerateError(`\u26A0\uFE0F ${missingCount} pi\u00E8ce(s) ne rentrent pas dans les panneaux standard. V\u00E9rifiez les dimensions.`);
-    }
-
-    // 4. Build insert rows
-    const insertRows = packed.map(({ part, sheet_number, position_x, position_y, rotated }) => ({
-      project_id:      id,
-      project_part_id: part.id,
-      panel_type:      part.material_type,
-      panel_width_mm:  getSheetDims(part.material_type)[0],
-      panel_height_mm: getSheetDims(part.material_type)[1],
-      part_label:      part.part_code || part.part_name,
-      cut_width_mm:    rotated ? part.height_mm : part.width_mm,
-      cut_height_mm:   rotated ? part.width_mm : part.height_mm,
-      quantity:        1,
-      edges:           buildEdgesString(part.edge_top, part.edge_bottom, part.edge_left, part.edge_right),
-      grain_direction: part.grain_direction,
-      sheet_number,
-      position_x,
-      position_y,
-      cnc_program:     null,
-      is_exported:     false,
-    }));
-
-    // Batch insert (Supabase limit)
-    for (let i = 0; i < insertRows.length; i += 500) {
-      const batch = insertRows.slice(i, i + 500);
-      const { error: batchErr } = await supabase.from('cutting_list').insert(batch);
-      if (batchErr) {
-        setGenerateError('Erreur lors de la g\u00E9n\u00E9ration : ' + batchErr.message);
+      if (!res.ok) {
+        if (res.status === 422 && data.validation) {
+          // Parts could not be placed
+          setMissingParts(data.validation.unplaced_count);
+          setGenerateError(
+            `${data.validation.unplaced_count} pièce(s) ne rentrent pas dans les panneaux standard. Vérifiez les dimensions.`,
+          );
+        } else {
+          setGenerateError(data.error || 'Erreur lors de la génération.');
+        }
         setGenerating(false);
         return;
       }
+
+      // Success
+      setMissingParts(0);
+      if (data.validation && !data.validation.all_parts_placed) {
+        setMissingParts(data.validation.unplaced_count);
+        setGenerateError(
+          `${data.validation.unplaced_count} pièce(s) non placées.`,
+        );
+      }
+    } catch {
+      setGenerateError('Erreur réseau lors de la génération.');
     }
 
     setGenerating(false);
