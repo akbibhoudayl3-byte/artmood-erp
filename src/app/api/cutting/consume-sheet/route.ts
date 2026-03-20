@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID, sanitizeString } from '@/lib/auth/server';
+import { findStockItem } from '@/lib/utils/stock-match';
+import { writeAuditLog } from '@/lib/security/audit';
 
 /**
  * POST /api/cutting/consume-sheet — Deduct stock for a completed cutting sheet.
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
   // ── 3. Find matching stock item ─────────────────────────────────────────
   const { data: stockItems } = await supabase
     .from('stock_items')
-    .select('id, name, current_quantity, reserved_quantity, unit')
+    .select('id, name, material_type, current_quantity, reserved_quantity, unit')
     .eq('is_active', true)
     .eq('stock_tracking', true);
 
@@ -81,14 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No stock items found' }, { status: 404 });
   }
 
-  const lower = sanitizedPanelType.toLowerCase();
-  const match = stockItems.find((s: any) => {
-    const sn = s.name.toLowerCase();
-    return sn.includes(lower.split('_')[0]) ||
-      (lower.includes('hdf') && sn.includes('hdf')) ||
-      (lower.includes('mdf') && !lower.includes('hdf') && sn.includes('mdf') && !sn.includes('hdf')) ||
-      (lower.includes('stratif') && sn.includes('stratif'));
-  });
+  const match = findStockItem(stockItems as any[], sanitizedPanelType);
 
   if (!match) {
     return NextResponse.json({
@@ -159,6 +154,14 @@ export async function POST(request: NextRequest) {
     .select('current_quantity, reserved_quantity')
     .eq('id', match.id)
     .single();
+
+  await writeAuditLog({
+    action: 'consume',
+    entity_type: 'stock_item',
+    entity_id: match.id,
+    user_id: auth.userId,
+    notes: `Sheet consumed: ${sanitizedPanelType} sheet #${sheetIdx} for project ${project_id}`,
+  });
 
   // ── 9. Return full proof ───────────────────────────────────────────────
   return NextResponse.json({

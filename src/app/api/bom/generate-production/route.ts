@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID } from '@/lib/auth/server';
+import { findStockItem } from '@/lib/utils/stock-match';
+import { writeAuditLog } from '@/lib/security/audit';
 
 /**
  * POST /api/bom/generate-production — Generate production order + parts from BOM.
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
   // 4. Read stock items for matching
   const { data: stockItems } = await supabase
     .from('stock_items')
-    .select('id, name, unit, current_quantity, reserved_quantity, cost_per_unit, category')
+    .select('id, name, material_type, unit, current_quantity, reserved_quantity, cost_per_unit, category')
     .eq('is_active', true)
     .eq('stock_tracking', true);
 
@@ -144,15 +146,8 @@ export async function POST(request: NextRequest) {
     const areaM2 = group.area_mm2 / 1e6;
     const sheetsNeeded = Math.ceil((group.area_mm2 / panelAreaMm2) * 1.15);
 
-    // Find matching stock item
-    const lower = matType.toLowerCase();
-    const match = (stockItems || []).find((s: any) => {
-      const sn = s.name.toLowerCase();
-      return sn.includes(lower.split('_')[0]) ||
-        (lower.includes('hdf') && sn.includes('hdf')) ||
-        (lower.includes('mdf') && !lower.includes('hdf') && sn.includes('mdf') && !sn.includes('hdf')) ||
-        (lower.includes('stratif') && sn.includes('stratif'));
-    });
+    // Find matching stock item (exact material_type, fallback to name)
+    const match = findStockItem((stockItems || []) as any[], matType);
 
     if (match) {
       // Reserve stock
@@ -186,6 +181,14 @@ export async function POST(request: NextRequest) {
       requirementsCreated++;
     }
   }
+
+  await writeAuditLog({
+    action: 'create',
+    entity_type: 'production_order',
+    entity_id: order.id,
+    user_id: auth.userId,
+    notes: `Production order generated from BOM for project ${project.reference_code} — ${prodParts.length} parts`,
+  });
 
   return NextResponse.json({
     order,

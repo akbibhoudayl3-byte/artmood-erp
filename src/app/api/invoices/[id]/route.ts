@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID, sanitizeString } from '@/lib/auth/server';
+import { writeAuditLog } from '@/lib/security/audit';
 
 function makeSupabase(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   return createServerClient(
@@ -92,6 +93,17 @@ export async function PATCH(
   if (body.status) {
     const newStatus = sanitizeString(body.status, 20);
     if (newStatus && ['draft', 'issued', 'partial', 'paid', 'cancelled'].includes(newStatus)) {
+      // Block cancellation if payments exist — must refund first
+      if (newStatus === 'cancelled' && invoice.paid_amount > 0) {
+        return NextResponse.json({
+          error: 'Cannot cancel invoice with payments. Refund all payments first via POST /api/invoices/[id]/refund.',
+          paid_amount: invoice.paid_amount,
+        }, { status: 400 });
+      }
+      // Block status change on already cancelled invoices
+      if (invoice.status === 'cancelled' && newStatus !== 'cancelled') {
+        return NextResponse.json({ error: 'Cannot change status of a cancelled invoice' }, { status: 400 });
+      }
       updates.status = newStatus;
     }
   }
@@ -116,6 +128,14 @@ export async function PATCH(
   if (updateErr) {
     return NextResponse.json({ error: 'Failed to update invoice', detail: updateErr.message }, { status: 500 });
   }
+
+  await writeAuditLog({
+    user_id: auth.userId,
+    action: 'update',
+    entity_type: 'invoice',
+    entity_id: id,
+    notes: `Invoice updated: ${Object.keys(updates).filter(k => k !== 'updated_at').join(', ')}`,
+  });
 
   return NextResponse.json({ invoice: updated });
 }

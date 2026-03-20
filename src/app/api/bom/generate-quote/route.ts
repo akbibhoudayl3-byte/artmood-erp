@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID, sanitizeNumber, sanitizeString } from '@/lib/auth/server';
+import { writeAuditLog } from '@/lib/security/audit';
 
 /**
  * POST /api/bom/generate-quote — Generate a quote deterministically from BOM.
@@ -226,6 +227,14 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+
+  await writeAuditLog({
+    action: 'create',
+    entity_type: 'quote',
+    entity_id: quote.id,
+    user_id: auth.userId,
+    notes: `Quote v${nextVersion} generated from BOM for project ${project.reference_code}`,
+  });
 
   return NextResponse.json({
     quote,

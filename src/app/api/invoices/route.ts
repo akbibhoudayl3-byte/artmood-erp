@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID, sanitizeString, sanitizeNumber } from '@/lib/auth/server';
+import { roundMoney, computeVAT, computeDiscount } from '@/lib/utils/money';
+import { writeAuditLog } from '@/lib/security/audit';
 
 function makeSupabase(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   return createServerClient(
@@ -69,6 +71,7 @@ export async function POST(request: NextRequest) {
   const issueDate = sanitizeString(body.issue_date, 20) || new Date().toISOString().split('T')[0];
   const dueDateRaw = sanitizeString(body.due_date, 20);
   const notes = sanitizeString(body.notes, 2000);
+  const vatRate = sanitizeNumber(body.vat_rate, { min: 0, max: 100 }) ?? 20; // Morocco standard 20%
 
   const cookieStore = await cookies();
   const supabase = makeSupabase(cookieStore);
@@ -84,21 +87,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  // 2. Generate invoice number: FAC-YYYY-NNNN
-  const year = new Date().getFullYear();
-  const { data: lastInvoice } = await supabase
-    .from('invoices')
-    .select('invoice_number')
-    .ilike('invoice_number', `FAC-${year}-%`)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  // 2. Generate invoice number atomically via DB function (prevents race conditions)
+  const { data: seqResult, error: seqErr } = await supabase.rpc('generate_invoice_number');
 
-  let seq = 1;
-  if (lastInvoice?.[0]?.invoice_number) {
-    const match = lastInvoice[0].invoice_number.match(/FAC-\d{4}-(\d+)/);
-    if (match) seq = parseInt(match[1], 10) + 1;
+  if (seqErr || !seqResult) {
+    return NextResponse.json({ error: 'Failed to generate invoice number', detail: seqErr?.message }, { status: 500 });
   }
-  const invoiceNumber = `FAC-${year}-${String(seq).padStart(4, '0')}`;
+  const invoiceNumber = seqResult as string;
 
   // 3. Get lines — from quote or manual
   let invoiceLines: Array<{
@@ -156,15 +151,16 @@ export async function POST(request: NextRequest) {
         quantity: qty,
         unit: sanitizeString(l.unit, 50) || 'unit',
         unit_price: unitPrice,
-        total_price: qty * unitPrice,
+        total_price: roundMoney(qty * unitPrice),
         sort_order: i,
       });
     }
 
-    subtotal = invoiceLines.reduce((s, l) => s + l.total_price, 0);
+    subtotal = roundMoney(invoiceLines.reduce((s, l) => s + l.total_price, 0));
     discountPercent = sanitizeNumber(body.discount_percent, { min: 0, max: 100 }) ?? 0;
-    discountAmount = subtotal * (discountPercent / 100);
-    totalAmount = subtotal - discountAmount;
+    const disc = computeDiscount(subtotal, discountPercent);
+    discountAmount = disc.discountAmount;
+    totalAmount = disc.afterDiscount;
   } else {
     // Fallback: use project total_amount with no lines
     totalAmount = project.total_amount || 0;
@@ -188,9 +184,12 @@ export async function POST(request: NextRequest) {
 
   const existingPaid = (existingPayments || []).reduce((s: number, p: any) => s + Number(p.amount), 0);
 
-  // Determine initial status
+  // Compute VAT: totalAmount is HT (before tax), total_ttc includes VAT
+  const { vatAmount, totalTTC } = computeVAT(totalAmount, vatRate);
+
+  // Determine initial status (compare against TTC)
   let status = 'draft';
-  if (existingPaid >= totalAmount && totalAmount > 0) {
+  if (existingPaid >= totalTTC && totalTTC > 0) {
     status = 'paid';
   } else if (existingPaid > 0) {
     status = 'partial';
@@ -208,7 +207,10 @@ export async function POST(request: NextRequest) {
       discount_percent: discountPercent,
       discount_amount: discountAmount,
       total_amount: totalAmount,
-      paid_amount: Math.min(existingPaid, totalAmount),
+      vat_rate: vatRate,
+      vat_amount: vatAmount,
+      total_ttc: totalTTC,
+      paid_amount: Math.min(existingPaid, totalTTC),
       issue_date: issueDate,
       due_date: dueDate,
       notes,
@@ -238,6 +240,14 @@ export async function POST(request: NextRequest) {
       .eq('project_id', project_id)
       .is('invoice_id', null);
   }
+
+  await writeAuditLog({
+    user_id: auth.userId,
+    action: 'create',
+    entity_type: 'invoice',
+    entity_id: invoice.id,
+    notes: `Invoice ${invoiceNumber} created for project ${project_id}, total TTC: ${totalTTC}`,
+  });
 
   return NextResponse.json({ invoice, lines_count: invoiceLines.length }, { status: 201 });
 }

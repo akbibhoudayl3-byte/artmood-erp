@@ -11,7 +11,6 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import type { PaymentType, PaymentMethod } from '@/types/database';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import { Plus, X, Banknote, TrendingUp, AlertCircle, CheckCircle, Pencil, Trash2 } from 'lucide-react';
-import { createLedgerEntry } from '@/lib/helpers/ledger';
 
 const PAYMENT_TYPES: PaymentType[] = ['deposit', 'pre_installation', 'final', 'other'];
 const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'cheque', 'bank_transfer', 'card', 'other'];
@@ -61,15 +60,17 @@ export default function PaymentsPage() {
   }, []);
 
   async function loadPayments() {
-    const { data, error } = await supabase
-      .from('payments')
-      .select('*, project:projects(client_name, reference_code)')
-      .order('received_at', { ascending: false })
-      .limit(100);
-    if (error) {
-      setLoadError('Failed to load payments: ' + error.message);
-    } else {
-      setPayments((data as PaymentWithProject[]) || []);
+    try {
+      const res = await fetch('/api/payments');
+      if (res.ok) {
+        const data = await res.json();
+        setPayments((data.payments as PaymentWithProject[]) || []);
+      } else {
+        const err = await res.json();
+        setLoadError('Failed to load payments: ' + (err.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      setLoadError('Failed to load payments: ' + e.message);
     }
     setLoading(false);
   }
@@ -109,34 +110,23 @@ export default function PaymentsPage() {
     setShowForm(true);
   }
 
-  async function handleDelete(paymentId: string, pProjectId: string, pAmount: number) {
+  async function handleDelete(paymentId: string) {
     if (!window.confirm('Delete this payment? This will also update the project total.')) return;
     setDeleting(paymentId);
 
-    const { error } = await supabase.from('payments').delete().eq('id', paymentId);
-    if (error) {
-      setSuccessMsg('');
-      setLoadError('Failed to delete: ' + error.message);
+    try {
+      const res = await fetch(`/api/payments/${paymentId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        setSuccessMsg('');
+        setLoadError('Failed to delete: ' + (err.error || 'Unknown error'));
+        setDeleting(null);
+        return;
+      }
+    } catch (e: any) {
+      setLoadError('Failed to delete: ' + e.message);
       setDeleting(null);
       return;
-    }
-
-    // Update project paid_amount (subtract)
-    const { data: project } = await supabase
-      .from('projects')
-      .select('paid_amount, total_amount')
-      .eq('id', pProjectId)
-      .single();
-    if (project) {
-      const newPaid = Math.max(0, (project.paid_amount || 0) - pAmount);
-      const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
-      await supabase.from('projects').update({
-        paid_amount: newPaid,
-        deposit_paid: pct >= 0.5,
-        pre_install_paid: pct >= 0.9,
-        final_paid: pct >= 1.0,
-        updated_at: new Date().toISOString(),
-      }).eq('id', pProjectId);
     }
 
     setDeleting(null);
@@ -164,127 +154,71 @@ export default function PaymentsPage() {
     setSaving(true);
     setFormError('');
 
-    if (editingPayment) {
-      // UPDATE existing payment
-      const oldAmount = editingPayment.amount;
-      const { error: updateErr } = await supabase.from('payments').update({
-        project_id: projectId,
-        amount: parsedAmount,
-        payment_type: paymentType,
-        payment_method: paymentMethod,
-        received_at: new Date(receivedAt).toISOString(),
-        reference_number: referenceNumber || null,
-        notes: notes || null,
-      }).eq('id', editingPayment.id);
+    try {
+      if (editingPayment) {
+        // UPDATE via API
+        const res = await fetch(`/api/payments/${editingPayment.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: projectId,
+            amount: parsedAmount,
+            payment_type: paymentType,
+            payment_method: paymentMethod,
+            received_at: new Date(receivedAt).toISOString(),
+            reference_number: referenceNumber || null,
+            notes: notes || null,
+          }),
+        });
 
-      if (updateErr) {
-        setFormError('Failed to update: ' + updateErr.message);
+        if (!res.ok) {
+          const err = await res.json();
+          setFormError('Failed to update: ' + (err.error || 'Unknown error'));
+          setSaving(false);
+          return;
+        }
+
+        setEditingPayment(null);
+        resetForm();
         setSaving(false);
+        setSuccessMsg('Payment updated successfully.');
+        setTimeout(() => setSuccessMsg(''), 4000);
+        loadPayments();
         return;
       }
 
-      // Adjust project paid_amount if amount changed
-      if (parsedAmount !== oldAmount || projectId !== editingPayment.project_id) {
-        // Subtract old amount from old project
-        const { data: oldProject } = await supabase
-          .from('projects')
-          .select('paid_amount, total_amount')
-          .eq('id', editingPayment.project_id)
-          .single();
-        if (oldProject) {
-          const oldPaid = Math.max(0, (oldProject.paid_amount || 0) - oldAmount);
-          const oldPct = oldProject.total_amount > 0 ? oldPaid / oldProject.total_amount : 0;
-          await supabase.from('projects').update({
-            paid_amount: oldPaid,
-            deposit_paid: oldPct >= 0.5,
-            pre_install_paid: oldPct >= 0.9,
-            final_paid: oldPct >= 1.0,
-          }).eq('id', editingPayment.project_id);
-        }
-        // Add new amount to new project
-        const { data: newProject } = await supabase
-          .from('projects')
-          .select('paid_amount, total_amount')
-          .eq('id', projectId)
-          .single();
-        if (newProject) {
-          const newPaid = (newProject.paid_amount || 0) + parsedAmount;
-          const newPct = newProject.total_amount > 0 ? newPaid / newProject.total_amount : 0;
-          await supabase.from('projects').update({
-            paid_amount: newPaid,
-            deposit_paid: newPct >= 0.5,
-            pre_install_paid: newPct >= 0.9,
-            final_paid: newPct >= 1.0,
-          }).eq('id', projectId);
-        }
+      // INSERT via API
+      const res = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          amount: parsedAmount,
+          payment_type: paymentType,
+          payment_method: paymentMethod,
+          received_at: new Date(receivedAt).toISOString(),
+          reference_number: referenceNumber || null,
+          notes: notes || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setFormError('Failed to record payment: ' + (err.error || 'Unknown error'));
+        setSaving(false);
+        return;
       }
 
       setEditingPayment(null);
       resetForm();
       setSaving(false);
-      setSuccessMsg('Payment updated successfully.');
+      setSuccessMsg('Payment recorded successfully.');
       setTimeout(() => setSuccessMsg(''), 4000);
       loadPayments();
-      return;
-    }
-
-    // INSERT new payment
-    const { data: payment, error: insertErr } = await supabase.from('payments').insert({
-      project_id: projectId,
-      amount: parsedAmount,
-      payment_type: paymentType,
-      payment_method: paymentMethod,
-      received_at: new Date(receivedAt).toISOString(),
-      reference_number: referenceNumber || null,
-      notes: notes || null,
-      received_by: profile?.id,
-    }).select('id').single();
-
-    if (insertErr) {
-      setFormError('Failed to record payment: ' + insertErr.message);
+    } catch (e: any) {
+      setFormError('Error: ' + e.message);
       setSaving(false);
-      return;
     }
-
-    // Update project paid_amount (denormalized for performance)
-    const { data: project } = await supabase
-      .from('projects')
-      .select('paid_amount, total_amount')
-      .eq('id', projectId)
-      .single();
-
-    if (project) {
-      const newPaid = (project.paid_amount || 0) + parsedAmount;
-      const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
-      await supabase.from('projects').update({
-        paid_amount: newPaid,
-        deposit_paid: pct >= 0.5,
-        pre_install_paid: pct >= 0.9,
-        final_paid: pct >= 1.0,
-        updated_at: new Date().toISOString(),
-      }).eq('id', projectId);
-    }
-
-    // Create ledger entry for income
-    await createLedgerEntry({
-      date: new Date(receivedAt).toISOString(),
-      type: 'income',
-      category: paymentType,
-      amount: parsedAmount,
-      description: `Payment from ${projects.find(p => p.id === projectId)?.client_name || 'client'}`,
-      project_id: projectId,
-      source_module: 'payments',
-      source_id: payment?.id,
-      payment_method: paymentMethod,
-      created_by: profile?.id || null,
-    });
-
-    setEditingPayment(null);
-    resetForm();
-    setSaving(false);
-    setSuccessMsg('Payment recorded successfully.');
-    setTimeout(() => setSuccessMsg(''), 4000);
-    loadPayments();
   }
 
   const now = new Date();
@@ -397,7 +331,7 @@ export default function PaymentsPage() {
                           <Pencil size={14} />
                         </button>
                         <button
-                          onClick={() => handleDelete(p.id, p.project_id, Number(p.amount))}
+                          onClick={() => handleDelete(p.id)}
                           disabled={deleting === p.id}
                           className="p-1.5 rounded text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
                           title="Delete"
@@ -439,7 +373,7 @@ export default function PaymentsPage() {
                       <Pencil size={13} />
                     </button>
                     <button
-                      onClick={() => handleDelete(p.id, p.project_id, Number(p.amount))}
+                      onClick={() => handleDelete(p.id)}
                       disabled={deleting === p.id}
                       className="p-1 rounded text-red-500 hover:bg-red-50 disabled:opacity-40"
                       title="Delete"

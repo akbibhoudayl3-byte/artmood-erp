@@ -5,7 +5,8 @@ export type AuditAction =
   | "create" | "update" | "delete" | "view_sensitive"
   | "financial_edit" | "status_change" | "login" | "logout"
   | "export" | "print" | "upload" | "user_management"
-  | "stock_change" | "production_change" | "setting_change";
+  | "stock_change" | "production_change" | "setting_change"
+  | "consume";
 
 export interface AuditPayload {
   action: AuditAction;

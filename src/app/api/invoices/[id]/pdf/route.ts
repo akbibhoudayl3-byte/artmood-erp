@@ -69,7 +69,10 @@ export async function GET(
 
   const lines = ((invoice.invoice_lines || []) as any[]).sort((a: any, b: any) => a.sort_order - b.sort_order);
   const paymentList = payments || [];
-  const remaining = invoice.total_amount - invoice.paid_amount;
+  const invoiceTotal = invoice.total_ttc || invoice.total_amount; // fallback for pre-VAT invoices
+  const vatRate = invoice.vat_rate ?? 20;
+  const vatAmount = invoice.vat_amount ?? 0;
+  const remaining = invoiceTotal - invoice.paid_amount;
 
   const lineRows = lines.map((l: any, i: number) => `
     <tr>
@@ -204,7 +207,9 @@ export async function GET(
     <table class="totals-table">
       <tr><td>Sous-total HT</td><td>${Number(invoice.subtotal).toLocaleString('fr-MA')} MAD</td></tr>
       ${invoice.discount_amount > 0 ? `<tr><td>Remise (${invoice.discount_percent}%)</td><td style="color:#dc2626;">-${Number(invoice.discount_amount).toLocaleString('fr-MA')} MAD</td></tr>` : ''}
-      <tr class="grand-total"><td>TOTAL TTC</td><td>${Number(invoice.total_amount).toLocaleString('fr-MA')} MAD</td></tr>
+      <tr><td>Total HT</td><td>${Number(invoice.total_amount).toLocaleString('fr-MA')} MAD</td></tr>
+      <tr><td>TVA (${vatRate}%)</td><td>${Number(vatAmount).toLocaleString('fr-MA')} MAD</td></tr>
+      <tr class="grand-total"><td>TOTAL TTC</td><td>${Number(invoiceTotal).toLocaleString('fr-MA')} MAD</td></tr>
       <tr><td style="padding-top:12px;">Total pay\u00E9</td><td style="padding-top:12px;color:#16a34a;">+${Number(invoice.paid_amount).toLocaleString('fr-MA')} MAD</td></tr>
       <tr class="remaining"><td>Solde restant</td><td>${remaining.toLocaleString('fr-MA')} MAD</td></tr>
     </table>

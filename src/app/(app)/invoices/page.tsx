@@ -17,6 +17,9 @@ interface Invoice {
   quote_id: string | null;
   status: string;
   total_amount: number;
+  vat_rate: number;
+  vat_amount: number;
+  total_ttc: number;
   paid_amount: number;
   issue_date: string | null;
   due_date: string | null;
@@ -215,8 +218,9 @@ export default function InvoicesPage() {
         ) : (
           <div className="space-y-3">
             {filtered.map(inv => {
-              const remaining = inv.total_amount - inv.paid_amount;
-              const paidPct = inv.total_amount > 0 ? Math.round((inv.paid_amount / inv.total_amount) * 100) : 0;
+              const total = inv.total_ttc || inv.total_amount;
+              const remaining = total - inv.paid_amount;
+              const paidPct = total > 0 ? Math.round((inv.paid_amount / total) * 100) : 0;
 
               return (
                 <Card key={inv.id} className="hover:shadow-md transition-shadow">
@@ -235,7 +239,7 @@ export default function InvoicesPage() {
                           {inv.projects?.reference_code} — {inv.projects?.client_name}
                         </p>
                         <div className="flex gap-3 mt-2 text-xs text-[#64648B]">
-                          <span>Total: <b>{inv.total_amount.toLocaleString('fr-MA')} MAD</b></span>
+                          <span>Total TTC: <b>{total.toLocaleString('fr-MA')} MAD</b></span>
                           <span>Payé: <b className="text-green-600">{inv.paid_amount.toLocaleString('fr-MA')} MAD</b> ({paidPct}%)</span>
                           {remaining > 0 && (
                             <span>Reste: <b className="text-red-500">{remaining.toLocaleString('fr-MA')} MAD</b></span>

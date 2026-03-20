@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID, sanitizeString } from '@/lib/auth/server';
+import { findStockItem } from '@/lib/utils/stock-match';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   draft: ['sent'],
@@ -173,7 +174,7 @@ export async function PATCH(
         // Match materials to stock and create requirements
         const { data: stockItems } = await supabase
           .from('stock_items')
-          .select('id, name, reserved_quantity')
+          .select('id, name, material_type, reserved_quantity')
           .eq('is_active', true)
           .eq('stock_tracking', true);
 
@@ -182,14 +183,7 @@ export async function PATCH(
           const sheetsNeeded = Math.ceil((group.area_mm2 / (panelW * panelH)) * 1.15);
           const areaM2 = group.area_mm2 / 1e6;
 
-          const lower = matType.toLowerCase();
-          const match = (stockItems || []).find((s: any) => {
-            const sn = s.name.toLowerCase();
-            return sn.includes(lower.split('_')[0]) ||
-              (lower.includes('hdf') && sn.includes('hdf')) ||
-              (lower.includes('mdf') && !lower.includes('hdf') && sn.includes('mdf') && !sn.includes('hdf')) ||
-              (lower.includes('stratif') && sn.includes('stratif'));
-          });
+          const match = findStockItem((stockItems || []) as any[], matType);
 
           if (match) {
             await supabase.from('stock_items')
