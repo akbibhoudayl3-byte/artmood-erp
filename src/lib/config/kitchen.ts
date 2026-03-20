@@ -110,13 +110,11 @@ export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {
 // ── Pipeline Steps ──
 
 export const PIPELINE_STEPS = [
-  { step: 1, key: 'project',       label: 'Projet',          labelAr: 'المشروع' },
-  { step: 2, key: 'layout',        label: 'Plan',            labelAr: 'المخطط' },
-  { step: 3, key: 'modules',       label: 'Modules',         labelAr: 'الوحدات' },
-  { step: 4, key: 'options',       label: 'Options',         labelAr: 'الخيارات' },
-  { step: 5, key: 'customization', label: 'Personnalisation',labelAr: 'التخصيص' },
-  { step: 6, key: 'detection',     label: 'Détection Auto',  labelAr: 'الكشف التلقائي' },
-  { step: 7, key: 'price',         label: 'Prix',            labelAr: 'السعر' },
-  { step: 8, key: 'validation',    label: 'Validation',      labelAr: 'التحقق' },
-  { step: 9, key: 'actions',       label: 'Actions',         labelAr: 'الإجراءات' },
+  { step: 1, key: 'start',    label: 'Nouveau projet',  labelAr: 'مشروع جديد' },
+  { step: 2, key: 'modules',  label: 'Votre cuisine',   labelAr: 'مطبخك' },
+  { step: 3, key: 'style',    label: 'Style',           labelAr: 'الستيل' },
+  { step: 4, key: 'custom',   label: 'Personnaliser',   labelAr: 'تخصيص' },
+  { step: 5, key: 'check',    label: 'Vérification',    labelAr: 'التحقق' },
+  { step: 6, key: 'price',    label: 'Prix',            labelAr: 'الثمن' },
+  { step: 7, key: 'finish',   label: 'Terminer',        labelAr: 'إنهاء' },
 ] as const;
