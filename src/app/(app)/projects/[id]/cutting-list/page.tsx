@@ -79,8 +79,6 @@ const MATERIAL_LABELS: Record<string, string> = {
 
 const MAT_LABEL = (key: string) => MATERIAL_LABELS[key] ?? key;
 
-const WASTE_FACTOR = 0.80;
-
 function getSheetDims(materialType: string): [number, number] {
   const dims: Record<string, [number, number]> = {
     mdf_18:       [1220, 2800],
@@ -114,18 +112,29 @@ const GRAIN_ICON: Record<string, string> = {
   none:       '—',
 };
 
-// ── Simple guillotine packing ─────────────────────────────────────────────────
-// For each material type:
-//   1. Sort parts by width DESC (largest first — guillotine heuristic)
-//   2. Accumulate area per sheet; move to next sheet when capacity exceeded
-// This assigns sheet_number without computing real 2D placement (position_x/y = 0).
+// ── 2D Guillotine bin packing ──────────────────────────────────────────────────
 
 interface PackedEntry {
   part: ProjectPart;
   sheet_number: number;
+  position_x: number;
+  position_y: number;
+  rotated: boolean;
 }
 
-function packParts(parts: ProjectPart[]): PackedEntry[] {
+interface FreeRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Real 2D Guillotine bin packing.
+ * For each material type, places parts on sheets using Best-Short-Side-Fit.
+ * Returns actual (x, y) coordinates and verifies ALL parts are placed.
+ */
+function packParts(parts: ProjectPart[]): { packed: PackedEntry[]; missingCount: number } {
   const byMaterial = new Map<string, ProjectPart[]>();
   for (const part of parts) {
     const key = part.material_type;
@@ -133,30 +142,123 @@ function packParts(parts: ProjectPart[]): PackedEntry[] {
     byMaterial.get(key)!.push(part);
   }
 
-  const packed: PackedEntry[] = [];
+  const allPacked: PackedEntry[] = [];
+  let totalMissing = 0;
 
   for (const [matType, matParts] of byMaterial.entries()) {
     const [sheetW, sheetH] = getSheetDims(matType);
-    const sheetCapacity = sheetW * sheetH * WASTE_FACTOR;
 
-    // Sort by width DESC for guillotine-like packing
-    const sorted = [...matParts].sort((a, b) => b.width_mm * b.height_mm - a.width_mm * a.height_mm);
-
-    let sheetNumber = 1;
-    let usedArea = 0;
-
-    for (const part of sorted) {
-      const partArea = part.width_mm * part.height_mm * part.quantity;
-      if (usedArea + partArea > sheetCapacity && usedArea > 0) {
-        sheetNumber++;
-        usedArea = 0;
+    // Expand parts by quantity (each unit gets its own placement)
+    const expanded: ProjectPart[] = [];
+    for (const part of matParts) {
+      for (let i = 0; i < part.quantity; i++) {
+        expanded.push({ ...part, quantity: 1 });
       }
-      packed.push({ part, sheet_number: sheetNumber });
-      usedArea += partArea;
+    }
+
+    // Sort by max dimension DESC (larger pieces first = better packing)
+    expanded.sort((a, b) => {
+      const aMax = Math.max(a.width_mm, a.height_mm);
+      const bMax = Math.max(b.width_mm, b.height_mm);
+      return bMax - aMax || (b.width_mm * b.height_mm) - (a.width_mm * a.height_mm);
+    });
+
+    let currentSheet = 1;
+    let freeRects: FreeRect[] = [{ x: 0, y: 0, w: sheetW, h: sheetH }];
+
+    for (const part of expanded) {
+      const pw = part.width_mm;
+      const ph = part.height_mm;
+
+      // Try to find best fitting free rectangle (Best Short Side Fit)
+      let bestIdx = -1;
+      let bestRotated = false;
+      let bestShortSide = Infinity;
+
+      for (let i = 0; i < freeRects.length; i++) {
+        const r = freeRects[i];
+
+        // Try without rotation
+        if (pw <= r.w && ph <= r.h) {
+          const shortSide = Math.min(r.w - pw, r.h - ph);
+          if (shortSide < bestShortSide) {
+            bestShortSide = shortSide;
+            bestIdx = i;
+            bestRotated = false;
+          }
+        }
+
+        // Try with rotation (if grain allows)
+        if (part.grain_direction === 'none' && ph <= r.w && pw <= r.h) {
+          const shortSide = Math.min(r.w - ph, r.h - pw);
+          if (shortSide < bestShortSide) {
+            bestShortSide = shortSide;
+            bestIdx = i;
+            bestRotated = true;
+          }
+        }
+      }
+
+      if (bestIdx === -1) {
+        // Part doesn't fit on current sheet -> start new sheet
+        currentSheet++;
+        freeRects = [{ x: 0, y: 0, w: sheetW, h: sheetH }];
+
+        // Try again on fresh sheet
+        const r = freeRects[0];
+        const fitW = pw <= r.w && ph <= r.h;
+        const fitR = part.grain_direction === 'none' && ph <= r.w && pw <= r.h;
+
+        if (!fitW && !fitR) {
+          // Part is larger than sheet — cannot be placed
+          totalMissing++;
+          continue;
+        }
+
+        bestIdx = 0;
+        bestRotated = !fitW && fitR;
+      }
+
+      const rect = freeRects[bestIdx];
+      const placedW = bestRotated ? ph : pw;
+      const placedH = bestRotated ? pw : ph;
+
+      allPacked.push({
+        part,
+        sheet_number: currentSheet,
+        position_x: rect.x,
+        position_y: rect.y,
+        rotated: bestRotated,
+      });
+
+      // Guillotine split: split the free rectangle into two smaller ones
+      // Use the shorter leftover axis to split (minimizes waste)
+      const rightW = rect.w - placedW;
+      const bottomH = rect.h - placedH;
+
+      // Remove the used rectangle
+      freeRects.splice(bestIdx, 1);
+
+      if (rightW > 0 && bottomH > 0) {
+        // Split along the shorter remainder
+        if (rightW < bottomH) {
+          // Horizontal split: right strip is narrow
+          freeRects.push({ x: rect.x + placedW, y: rect.y, w: rightW, h: placedH });
+          freeRects.push({ x: rect.x, y: rect.y + placedH, w: rect.w, h: bottomH });
+        } else {
+          // Vertical split: bottom strip is narrow
+          freeRects.push({ x: rect.x + placedW, y: rect.y, w: rightW, h: rect.h });
+          freeRects.push({ x: rect.x, y: rect.y + placedH, w: placedW, h: bottomH });
+        }
+      } else if (rightW > 0) {
+        freeRects.push({ x: rect.x + placedW, y: rect.y, w: rightW, h: rect.h });
+      } else if (bottomH > 0) {
+        freeRects.push({ x: rect.x, y: rect.y + placedH, w: rect.w, h: bottomH });
+      }
     }
   }
 
-  return packed;
+  return { packed: allPacked, missingCount: totalMissing };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -264,6 +366,7 @@ function CuttingListContent() {
   const [markingSheet,    setMarkingSheet]    = useState<string | null>(null);
   const [error,           setError]           = useState<string | null>(null);
   const [generateError,   setGenerateError]   = useState<string | null>(null);
+  const [missingParts,    setMissingParts]    = useState(0);
 
   // ── Fetch project ──
   const fetchProject = useCallback(async () => {
@@ -342,39 +445,102 @@ function CuttingListContent() {
     // 2. Delete existing cutting list for this project
     await supabase.from('cutting_list').delete().eq('project_id', id);
 
-    // 3. Pack parts into sheets
-    const packed = packParts(parts as ProjectPart[]);
+    // 3. Pack parts into sheets (real 2D guillotine bin packing)
+    const { packed, missingCount } = packParts(parts as ProjectPart[]);
+
+    setMissingParts(missingCount);
+    if (missingCount > 0) {
+      setGenerateError(`\u26A0\uFE0F ${missingCount} pi\u00E8ce(s) ne rentrent pas dans les panneaux standard. V\u00E9rifiez les dimensions.`);
+    }
 
     // 4. Build insert rows
-    const insertRows = packed.map(({ part, sheet_number }) => ({
+    const insertRows = packed.map(({ part, sheet_number, position_x, position_y, rotated }) => ({
       project_id:      id,
       project_part_id: part.id,
       panel_type:      part.material_type,
       panel_width_mm:  getSheetDims(part.material_type)[0],
       panel_height_mm: getSheetDims(part.material_type)[1],
       part_label:      part.part_code || part.part_name,
-      cut_width_mm:    part.width_mm,
-      cut_height_mm:   part.height_mm,
-      quantity:        part.quantity,
+      cut_width_mm:    rotated ? part.height_mm : part.width_mm,
+      cut_height_mm:   rotated ? part.width_mm : part.height_mm,
+      quantity:        1,
       edges:           buildEdgesString(part.edge_top, part.edge_bottom, part.edge_left, part.edge_right),
       grain_direction: part.grain_direction,
       sheet_number,
-      position_x:      0,
-      position_y:      0,
+      position_x,
+      position_y,
       cnc_program:     null,
       is_exported:     false,
     }));
 
-    const { error: insertErr } = await supabase.from('cutting_list').insert(insertRows);
-    if (insertErr) {
-      setGenerateError('Erreur lors de la génération : ' + insertErr.message);
-      setGenerating(false);
-      return;
+    // Batch insert (Supabase limit)
+    for (let i = 0; i < insertRows.length; i += 500) {
+      const batch = insertRows.slice(i, i + 500);
+      const { error: batchErr } = await supabase.from('cutting_list').insert(batch);
+      if (batchErr) {
+        setGenerateError('Erreur lors de la g\u00E9n\u00E9ration : ' + batchErr.message);
+        setGenerating(false);
+        return;
+      }
     }
 
     setGenerating(false);
     await fetchEntries();
   }, [id, fetchEntries]);
+
+  // ── Auto-deduct stock when a sheet is fully cut ──
+  const deductStockForSheet = useCallback(async (panelType: string, sheetNumber: number, sheetEntries: CuttingEntry[]) => {
+    // Find matching stock item for this material
+    const { data: stockItems } = await supabase
+      .from('stock_items')
+      .select('id, name, current_quantity, reserved_quantity, unit')
+      .eq('is_active', true)
+      .eq('stock_tracking', true);
+
+    if (!stockItems) return;
+
+    const lower = panelType.toLowerCase();
+    const match = stockItems.find((s: any) => {
+      const sn = s.name.toLowerCase();
+      return sn.includes(lower.split('_')[0]) ||
+        (lower.includes('hdf') && sn.includes('hdf')) ||
+        (lower.includes('mdf') && !lower.includes('hdf') && sn.includes('mdf') && !sn.includes('hdf')) ||
+        (lower.includes('stratif') && sn.includes('stratif'));
+    });
+
+    if (!match) return; // No matching stock item found
+
+    // Check if already deducted (avoid double deduction)
+    const deductionNote = `Découpe auto: ${panelType} panneau #${sheetNumber} — Projet ${id}`;
+    const { data: existing } = await supabase
+      .from('stock_movements')
+      .select('id')
+      .eq('stock_item_id', match.id)
+      .eq('reference_type', 'cutting_sheet')
+      .eq('notes', deductionNote)
+      .limit(1);
+
+    if (existing && existing.length > 0) return; // Already deducted
+
+    // Create stock movement (1 panel consumed)
+    await supabase.from('stock_movements').insert({
+      stock_item_id: match.id,
+      movement_type: 'production_out',
+      quantity: -1, // 1 sheet consumed
+      reference_type: 'cutting_sheet',
+      reference_id: id, // project_id
+      project_id: id,
+      notes: deductionNote,
+    });
+
+    // Release 1 from reservation if any
+    if (match.reserved_quantity > 0) {
+      await supabase
+        .from('stock_items')
+        .update({ reserved_quantity: Math.max(0, match.reserved_quantity - 1) })
+        .eq('id', match.id);
+    }
+  }, [id]);
 
   // ── Mark single part cut ──
   const markPartCut = useCallback(async (entry: CuttingEntry, currentlyCut: boolean) => {
@@ -392,7 +558,21 @@ function CuttingListContent() {
       .from('project_parts')
       .update({ is_cut: newValue })
       .eq('id', entry.project_part_id);
-  }, []);
+
+    // Check if entire sheet is now cut -> auto deduct stock
+    if (newValue) {
+      const sheetEntries = entries.filter(
+        (e) => e.panel_type === entry.panel_type && e.sheet_number === entry.sheet_number,
+      );
+      const allNowCut = sheetEntries.every((e) => {
+        if (e.project_part_id === entry.project_part_id) return true; // the one we just marked
+        return e.project_part_id ? (partsCutMap.get(e.project_part_id) ?? false) : true;
+      });
+      if (allNowCut) {
+        await deductStockForSheet(entry.panel_type, entry.sheet_number, sheetEntries);
+      }
+    }
+  }, [entries, partsCutMap, deductStockForSheet]);
 
   // ── Mark all in sheet cut ──
   const markSheetAllCut = useCallback(
@@ -414,9 +594,12 @@ function CuttingListContent() {
         });
       }
 
+      // Auto-deduct stock for this sheet
+      await deductStockForSheet(panelType, sheetNumber, sheetEntries);
+
       setMarkingSheet(null);
     },
-    [entries],
+    [entries, deductStockForSheet],
   );
 
   // ── Derived stats ──
@@ -612,10 +795,10 @@ function CuttingListContent() {
           },
           {
             label: 'Restantes',
-            value: loadingEntries ? '—' : String(uncutCount),
-            icon: <AlertTriangle className={`h-4 w-4 ${uncutCount > 0 ? 'text-amber-500' : 'text-gray-300'}`} />,
-            bg: uncutCount > 0 ? 'bg-amber-50' : 'bg-gray-50',
-            border: uncutCount > 0 ? 'border-amber-100' : 'border-gray-100',
+            value: loadingEntries ? '—' : (missingParts > 0 ? `${uncutCount} (${missingParts} hors-format)` : String(uncutCount)),
+            icon: <AlertTriangle className={`h-4 w-4 ${uncutCount > 0 || missingParts > 0 ? 'text-amber-500' : 'text-gray-300'}`} />,
+            bg: uncutCount > 0 || missingParts > 0 ? 'bg-amber-50' : 'bg-gray-50',
+            border: uncutCount > 0 || missingParts > 0 ? 'border-amber-100' : 'border-gray-100',
           },
         ].map((card) => (
           <div key={card.label} className={`${card.bg} border ${card.border} rounded-2xl p-4 flex items-center gap-3`}>

@@ -8,7 +8,7 @@ import Card, { CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Input';
-import { ArrowLeft, Plus, Trash2, GripVertical } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, GripVertical, RefreshCw, Zap } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -43,6 +43,76 @@ export default function NewQuotePage() {
     { description: '', quantity: '1', unit: 'unit', unit_price: '' },
   ]);
   const [saving, setSaving] = useState(false);
+  const [loadingBom, setLoadingBom] = useState(false);
+
+  async function importFromBom() {
+    if (!projectId) return;
+    setLoadingBom(true);
+
+    const { data: parts } = await supabase
+      .from('project_parts')
+      .select('*')
+      .eq('project_id', projectId);
+
+    if (!parts || parts.length === 0) {
+      setLoadingBom(false);
+      alert('Aucune pièce BOM trouvée. Générez d\'abord le BOM depuis l\'onglet Modules.');
+      return;
+    }
+
+    // Group by material_type
+    const matGroups: Record<string, { count: number; area_mm2: number; edgeLength_mm: number }> = {};
+    for (const p of parts) {
+      const key = p.material_type || 'other';
+      if (!matGroups[key]) matGroups[key] = { count: 0, area_mm2: 0, edgeLength_mm: 0 };
+      matGroups[key].count += p.quantity;
+      matGroups[key].area_mm2 += p.width_mm * p.height_mm * p.quantity;
+      if (p.edge_top) matGroups[key].edgeLength_mm += p.width_mm * p.quantity;
+      if (p.edge_bottom) matGroups[key].edgeLength_mm += p.width_mm * p.quantity;
+      if (p.edge_left) matGroups[key].edgeLength_mm += p.height_mm * p.quantity;
+      if (p.edge_right) matGroups[key].edgeLength_mm += p.height_mm * p.quantity;
+    }
+
+    const MATERIAL_LABELS: Record<string, string> = {
+      mdf_18: 'MDF 18mm', mdf_16: 'MDF 16mm', mdf_12: 'MDF 12mm',
+      stratifie_18: 'Stratifié 18mm', stratifie_16: 'Stratifié 16mm',
+      back_hdf_5: 'Fond HDF 5mm', back_mdf_8: 'Fond MDF 8mm',
+      solid_wood: 'Bois Massif', plywood: 'Contreplaqué',
+    };
+
+    const newLines: LineItem[] = [];
+
+    for (const [matType, group] of Object.entries(matGroups)) {
+      const label = MATERIAL_LABELS[matType] || matType;
+      const areaM2 = (group.area_mm2 / 1e6).toFixed(2);
+      newLines.push({
+        description: `${label} — ${group.count} pièces (${areaM2} m²)`,
+        quantity: String(group.count),
+        unit: 'pièce',
+        unit_price: '',
+      });
+    }
+
+    // Edge banding total
+    const totalEdge = Object.values(matGroups).reduce((s, g) => s + g.edgeLength_mm, 0);
+    if (totalEdge > 0) {
+      newLines.push({
+        description: `Chant — ${(totalEdge / 1000).toFixed(1)} mètres linéaires`,
+        quantity: String(Math.ceil(totalEdge / 1000)),
+        unit: 'ml',
+        unit_price: '',
+      });
+    }
+
+    // Standard service lines
+    newLines.push(
+      { description: 'Main d\'oeuvre — Fabrication', quantity: '1', unit: 'forfait', unit_price: '' },
+      { description: 'Transport et Installation', quantity: '1', unit: 'forfait', unit_price: '' },
+    );
+
+    setLines(newLines);
+    setLoadingBom(false);
+  }
 
   useEffect(() => {
     supabase.from('projects').select('id, client_name, reference_code')
@@ -157,6 +227,24 @@ export default function NewQuotePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* BOM Import */}
+      {projectId && (
+        <div className="flex gap-2">
+          <button
+            onClick={importFromBom}
+            disabled={loadingBom}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#1E2F52] hover:bg-[#2a3f6b] disabled:bg-gray-300 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            {loadingBom ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Zap size={14} />
+            )}
+            {loadingBom ? 'Import BOM en cours…' : 'Importer depuis BOM'}
+          </button>
+        </div>
+      )}
 
       {/* Line Items */}
       <Card>

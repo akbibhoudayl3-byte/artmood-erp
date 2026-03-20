@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -26,7 +25,6 @@ const SOURCE_ICONS: Record<string, React.ReactNode> = {
 
 export default function NewLeadPage() {
   const router = useRouter();
-  const supabase = createClient();
   const { profile } = useAuth();
   const { t } = useLocale();
   const [loading, setLoading] = useState(false);
@@ -45,20 +43,23 @@ export default function NewLeadPage() {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.from('leads').insert({
-      full_name: form.full_name,
-      phone: form.phone,
-      city: form.city || null,
-      source: form.source || null,
-      notes: form.notes || null,
-      status: 'new',
-      assigned_to: profile?.role === 'community_manager' ? null : profile?.id,
-      created_by: profile?.id,
+    const res = await fetch('/api/leads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full_name: form.full_name,
+        phone: form.phone,
+        city: form.city || null,
+        source: form.source || null,
+        notes: form.notes || null,
+        assigned_to: profile?.role === 'community_manager' ? null : profile?.id,
+      }),
     });
+    const result = await res.json();
 
     setLoading(false);
-    if (error) {
-      setFormError('Failed to create lead: ' + error.message);
+    if (!res.ok) {
+      setFormError('Erreur: ' + result.error);
       return;
     }
     router.push('/leads');

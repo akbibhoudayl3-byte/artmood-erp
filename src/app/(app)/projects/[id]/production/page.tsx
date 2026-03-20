@@ -139,6 +139,7 @@ export default function ProjectProductionPage() {
   const [bomSuggestions, setBomSuggestions] = useState<BomSuggestion[]>([]);
   const [loadingBom, setLoadingBom] = useState(false);
   const [importingBom, setImportingBom] = useState(false);
+  const [generatingBom, setGeneratingBom] = useState(false);
 
   const canWrite = ['ceo', 'workshop_manager', 'workshop_worker'].includes(profile?.role || '');
 
@@ -535,6 +536,116 @@ export default function ProjectProductionPage() {
     setConfirming(false);
   }
 
+  async function generateFromBom() {
+    setGeneratingBom(true);
+
+    // 1. Fetch project parts from BOM
+    const { data: parts, error: partsErr } = await supabase
+      .from('project_parts')
+      .select('*')
+      .eq('project_id', id);
+
+    if (partsErr || !parts || parts.length === 0) {
+      alert('Aucune pièce BOM trouvée. Générez d\'abord le BOM depuis l\'onglet Modules.');
+      setGeneratingBom(false);
+      return;
+    }
+
+    // 2. Fetch project name
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('reference_code, client_name')
+      .eq('id', id)
+      .single();
+
+    const orderName = `Production ${proj?.reference_code || ''} — ${parts.length} pièces`;
+
+    // 3. Create production order
+    const { data: order, error: orderErr } = await supabase
+      .from('production_orders')
+      .insert({
+        project_id: id,
+        name: orderName,
+        notes: `Généré automatiquement depuis BOM. ${parts.length} pièces, ${new Set(parts.map((p: any) => p.material_type)).size} matériaux.`,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (orderErr || !order) {
+      alert('Erreur création ordre: ' + (orderErr?.message || 'Inconnu'));
+      setGeneratingBom(false);
+      return;
+    }
+
+    // 4. Create production_parts from project_parts
+    const prodParts = parts.map((p: any, idx: number) => ({
+      production_order_id: order.id,
+      part_name: p.part_name || p.part_code || `Pièce ${idx + 1}`,
+      part_code: p.part_code || `P-${String(idx + 1).padStart(3, '0')}`,
+      current_station: 'cutting',
+      notes: `${p.material_type} | ${p.width_mm}x${p.height_mm}mm | Qté: ${p.quantity}`,
+    }));
+
+    // Batch insert (max 500 per batch)
+    for (let i = 0; i < prodParts.length; i += 500) {
+      const batch = prodParts.slice(i, i + 500);
+      await supabase.from('production_parts').insert(batch);
+    }
+
+    // 5. Auto-generate material requirements by grouping parts by material
+    const matGroups: Record<string, { area_mm2: number; count: number }> = {};
+    for (const p of parts) {
+      const key = (p as any).material_type || 'other';
+      if (!matGroups[key]) matGroups[key] = { area_mm2: 0, count: 0 };
+      matGroups[key].area_mm2 += ((p as any).width_mm * (p as any).height_mm * (p as any).quantity);
+      matGroups[key].count += (p as any).quantity;
+    }
+
+    // Match materials to stock items and create requirements
+    for (const [matType, group] of Object.entries(matGroups)) {
+      const SHEET_YIELD = 2.88; // m² per standard sheet (1220x2800 approx, with waste)
+      const areaM2 = group.area_mm2 / 1e6;
+      const sheetsNeeded = Math.ceil(areaM2 / SHEET_YIELD * 1.15); // 15% waste factor
+
+      // Find matching stock item
+      const lower = matType.toLowerCase();
+      const match = stockOptions.find(s => {
+        const sn = s.name.toLowerCase();
+        return sn.includes(lower.split('_')[0]) ||
+          (lower.includes('hdf') && sn.includes('hdf')) ||
+          (lower.includes('mdf') && !lower.includes('hdf') && sn.includes('mdf') && !sn.includes('hdf')) ||
+          (lower.includes('stratif') && sn.includes('stratif'));
+      });
+
+      if (match) {
+        // Reserve stock
+        await supabase
+          .from('stock_items')
+          .update({ reserved_quantity: match.reserved_quantity + sheetsNeeded })
+          .eq('id', match.id);
+
+        // Create requirement
+        await supabase.from('production_material_requirements').insert({
+          production_order_id: order.id,
+          material_id: match.id,
+          planned_qty: sheetsNeeded,
+          unit: 'panel',
+          status: 'reserved',
+          notes: `BOM auto: ${matType} — ${group.count} pièces (${areaM2.toFixed(2)} m²)`,
+        });
+      }
+    }
+
+    // 6. Refresh UI
+    await loadOrders();
+    await loadStock();
+    setSelectedOrder(order as ProductionOrderItem);
+    setTab('materials');
+    setGeneratingBom(false);
+  }
+
   async function updateOrderStatus(orderId: string, status: string) {
     const updates: Record<string, unknown> = { status };
     if (status === 'in_progress' && !selectedOrder?.started_at) updates.started_at = new Date().toISOString();
@@ -605,9 +716,20 @@ export default function ProjectProductionPage() {
         {tab === 'orders' && (
           <div className="space-y-3">
             {canWrite && (
-              <Button onClick={() => setShowNewOrder(true)} size="sm" className="w-full">
-                <Plus size={14} /> Nouvel Ordre de Production
-              </Button>
+              <div className="space-y-2">
+                <Button
+                  onClick={generateFromBom}
+                  size="sm"
+                  className="w-full bg-[#1E2F52] hover:bg-[#2a3f6b]"
+                  disabled={generatingBom}
+                >
+                  {generatingBom ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
+                  {generatingBom ? 'Génération BOM…' : 'Générer Ordre depuis BOM'}
+                </Button>
+                <Button onClick={() => setShowNewOrder(true)} size="sm" variant="secondary" className="w-full">
+                  <Plus size={14} /> Nouvel Ordre Manuel
+                </Button>
+              </div>
             )}
 
             {loading ? (

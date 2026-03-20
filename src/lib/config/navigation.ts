@@ -29,6 +29,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: 'Documents', href: '/documents', icon: 'FileText', i18nKey: 'nav.documents' },
     { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
     { label: 'Reports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
+    { label: 'Invoices', href: '/invoices', icon: 'Receipt', i18nKey: 'nav.invoices' },
     { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
     { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
     { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
@@ -47,6 +48,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
     { label: 'Quotes', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
+    { label: 'Invoices', href: '/invoices', icon: 'Receipt', i18nKey: 'nav.invoices' },
     { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
@@ -107,6 +109,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
     { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
     { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
+    { label: 'Invoices', href: '/invoices', icon: 'Receipt', i18nKey: 'nav.invoices' },
     { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
@@ -159,6 +162,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
     { label: 'Finance', i18nKey: 'nav.group_finance', items: [
       { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
       { label: 'Reports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
+      { label: 'Invoices', href: '/invoices', icon: 'Receipt', i18nKey: 'nav.invoices' },
     ]},
     { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
       { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
@@ -186,6 +190,9 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
       { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
       { label: 'Quotes', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
       { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+    ]},
+    { label: 'Finance', i18nKey: 'nav.group_finance', items: [
+      { label: 'Invoices', href: '/invoices', icon: 'Receipt', i18nKey: 'nav.invoices' },
     ]},
     { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
       { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
@@ -310,6 +317,7 @@ export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
     { label: 'Finance', i18nKey: 'nav.group_finance', items: [
       { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
       { label: 'Reports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
+      { label: 'Invoices', href: '/invoices', icon: 'Receipt', i18nKey: 'nav.invoices' },
     ]},
     { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
       { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },

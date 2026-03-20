@@ -145,46 +145,25 @@ export default function LeadDetailPage() {
     setConvertError('');
 
     try {
-      // 1. Insert the new project
-      const { data: newProject, error: projectError } = await supabase
-        .from('projects')
-        .insert({
-          client_name: convertForm.client_name.trim(),
-          client_phone: convertForm.client_phone.trim(),
-          client_email: convertForm.client_email.trim() || null,
-          client_city: convertForm.client_city.trim() || null,
-          total_amount: convertForm.budget ? parseFloat(convertForm.budget) : 0,
-          status: 'measurements',
-          created_by: profile?.id,
-          source_lead_id: lead?.id,
-          notes: convertForm.notes.trim() || null,
-        })
-        .select('id, reference_code')
-        .single();
-
-      if (projectError || !newProject) {
-        setConvertError(projectError?.message || 'Failed to create project.');
+      const res = await fetch(`/api/leads/${lead.id}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: convertForm.client_name,
+          client_phone: convertForm.client_phone,
+          client_email: convertForm.client_email,
+          client_city: convertForm.client_city,
+          budget: convertForm.budget,
+          notes: convertForm.notes,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        setConvertError(result.error || 'Failed to convert lead.');
         setConverting(false);
         return;
       }
-
-      // 2. Update lead with project_id
-      await supabase.from('leads').update({
-        project_id: newProject.id,
-        status: 'won',
-        updated_at: new Date().toISOString(),
-      }).eq('id', id);
-
-      // 3. Log activity
-      await supabase.from('lead_activities').insert({
-        lead_id: id,
-        user_id: profile?.id,
-        activity_type: 'status_change',
-        description: `Converted to project: ${newProject.reference_code}`,
-      });
-
-      // 4. Navigate to new project
-      router.push(`/projects/${newProject.id}`);
+      router.push(`/projects/${result.project.id}`);
     } catch (err: any) {
       setConvertError(err?.message || 'An unexpected error occurred.');
       setConverting(false);
