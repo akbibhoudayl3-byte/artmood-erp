@@ -112,155 +112,6 @@ const GRAIN_ICON: Record<string, string> = {
   none:       '—',
 };
 
-// ── 2D Guillotine bin packing ──────────────────────────────────────────────────
-
-interface PackedEntry {
-  part: ProjectPart;
-  sheet_number: number;
-  position_x: number;
-  position_y: number;
-  rotated: boolean;
-}
-
-interface FreeRect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/**
- * Real 2D Guillotine bin packing.
- * For each material type, places parts on sheets using Best-Short-Side-Fit.
- * Returns actual (x, y) coordinates and verifies ALL parts are placed.
- */
-function packParts(parts: ProjectPart[]): { packed: PackedEntry[]; missingCount: number } {
-  const byMaterial = new Map<string, ProjectPart[]>();
-  for (const part of parts) {
-    const key = part.material_type;
-    if (!byMaterial.has(key)) byMaterial.set(key, []);
-    byMaterial.get(key)!.push(part);
-  }
-
-  const allPacked: PackedEntry[] = [];
-  let totalMissing = 0;
-
-  for (const [matType, matParts] of byMaterial.entries()) {
-    const [sheetW, sheetH] = getSheetDims(matType);
-
-    // Expand parts by quantity (each unit gets its own placement)
-    const expanded: ProjectPart[] = [];
-    for (const part of matParts) {
-      for (let i = 0; i < part.quantity; i++) {
-        expanded.push({ ...part, quantity: 1 });
-      }
-    }
-
-    // Sort by max dimension DESC (larger pieces first = better packing)
-    expanded.sort((a, b) => {
-      const aMax = Math.max(a.width_mm, a.height_mm);
-      const bMax = Math.max(b.width_mm, b.height_mm);
-      return bMax - aMax || (b.width_mm * b.height_mm) - (a.width_mm * a.height_mm);
-    });
-
-    let currentSheet = 1;
-    let freeRects: FreeRect[] = [{ x: 0, y: 0, w: sheetW, h: sheetH }];
-
-    for (const part of expanded) {
-      const pw = part.width_mm;
-      const ph = part.height_mm;
-
-      // Try to find best fitting free rectangle (Best Short Side Fit)
-      let bestIdx = -1;
-      let bestRotated = false;
-      let bestShortSide = Infinity;
-
-      for (let i = 0; i < freeRects.length; i++) {
-        const r = freeRects[i];
-
-        // Try without rotation
-        if (pw <= r.w && ph <= r.h) {
-          const shortSide = Math.min(r.w - pw, r.h - ph);
-          if (shortSide < bestShortSide) {
-            bestShortSide = shortSide;
-            bestIdx = i;
-            bestRotated = false;
-          }
-        }
-
-        // Try with rotation (if grain allows)
-        if (part.grain_direction === 'none' && ph <= r.w && pw <= r.h) {
-          const shortSide = Math.min(r.w - ph, r.h - pw);
-          if (shortSide < bestShortSide) {
-            bestShortSide = shortSide;
-            bestIdx = i;
-            bestRotated = true;
-          }
-        }
-      }
-
-      if (bestIdx === -1) {
-        // Part doesn't fit on current sheet -> start new sheet
-        currentSheet++;
-        freeRects = [{ x: 0, y: 0, w: sheetW, h: sheetH }];
-
-        // Try again on fresh sheet
-        const r = freeRects[0];
-        const fitW = pw <= r.w && ph <= r.h;
-        const fitR = part.grain_direction === 'none' && ph <= r.w && pw <= r.h;
-
-        if (!fitW && !fitR) {
-          // Part is larger than sheet — cannot be placed
-          totalMissing++;
-          continue;
-        }
-
-        bestIdx = 0;
-        bestRotated = !fitW && fitR;
-      }
-
-      const rect = freeRects[bestIdx];
-      const placedW = bestRotated ? ph : pw;
-      const placedH = bestRotated ? pw : ph;
-
-      allPacked.push({
-        part,
-        sheet_number: currentSheet,
-        position_x: rect.x,
-        position_y: rect.y,
-        rotated: bestRotated,
-      });
-
-      // Guillotine split: split the free rectangle into two smaller ones
-      // Use the shorter leftover axis to split (minimizes waste)
-      const rightW = rect.w - placedW;
-      const bottomH = rect.h - placedH;
-
-      // Remove the used rectangle
-      freeRects.splice(bestIdx, 1);
-
-      if (rightW > 0 && bottomH > 0) {
-        // Split along the shorter remainder
-        if (rightW < bottomH) {
-          // Horizontal split: right strip is narrow
-          freeRects.push({ x: rect.x + placedW, y: rect.y, w: rightW, h: placedH });
-          freeRects.push({ x: rect.x, y: rect.y + placedH, w: rect.w, h: bottomH });
-        } else {
-          // Vertical split: bottom strip is narrow
-          freeRects.push({ x: rect.x + placedW, y: rect.y, w: rightW, h: rect.h });
-          freeRects.push({ x: rect.x, y: rect.y + placedH, w: placedW, h: bottomH });
-        }
-      } else if (rightW > 0) {
-        freeRects.push({ x: rect.x + placedW, y: rect.y, w: rightW, h: rect.h });
-      } else if (bottomH > 0) {
-        freeRects.push({ x: rect.x, y: rect.y + placedH, w: rect.w, h: bottomH });
-      }
-    }
-  }
-
-  return { packed: allPacked, missingCount: totalMissing };
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const today = new Date().toLocaleDateString('fr-MA', {
@@ -465,57 +316,30 @@ function CuttingListContent() {
     await fetchEntries();
   }, [id, fetchEntries]);
 
-  // ── Auto-deduct stock when a sheet is fully cut ──
-  const deductStockForSheet = useCallback(async (panelType: string, sheetNumber: number, sheetEntries: CuttingEntry[]) => {
-    // Find matching stock item for this material
-    const { data: stockItems } = await supabase
-      .from('stock_items')
-      .select('id, name, current_quantity, reserved_quantity, unit')
-      .eq('is_active', true)
-      .eq('stock_tracking', true);
+  // ── Auto-deduct stock when a sheet is fully cut (via server API) ──
+  const deductStockForSheet = useCallback(async (panelType: string, sheetNumber: number, _sheetEntries: CuttingEntry[]) => {
+    try {
+      const res = await fetch('/api/cutting/consume-sheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: id,
+          panel_type: panelType,
+          sheet_index: sheetNumber,
+        }),
+      });
 
-    if (!stockItems) return;
+      if (res.status === 409) {
+        // Already deducted — idempotency check passed, safe to ignore
+        return;
+      }
 
-    const lower = panelType.toLowerCase();
-    const match = stockItems.find((s: any) => {
-      const sn = s.name.toLowerCase();
-      return sn.includes(lower.split('_')[0]) ||
-        (lower.includes('hdf') && sn.includes('hdf')) ||
-        (lower.includes('mdf') && !lower.includes('hdf') && sn.includes('mdf') && !sn.includes('hdf')) ||
-        (lower.includes('stratif') && sn.includes('stratif'));
-    });
-
-    if (!match) return; // No matching stock item found
-
-    // Check if already deducted (avoid double deduction)
-    const deductionNote = `Découpe auto: ${panelType} panneau #${sheetNumber} — Projet ${id}`;
-    const { data: existing } = await supabase
-      .from('stock_movements')
-      .select('id')
-      .eq('stock_item_id', match.id)
-      .eq('reference_type', 'cutting_sheet')
-      .eq('notes', deductionNote)
-      .limit(1);
-
-    if (existing && existing.length > 0) return; // Already deducted
-
-    // Create stock movement (1 panel consumed)
-    await supabase.from('stock_movements').insert({
-      stock_item_id: match.id,
-      movement_type: 'production_out',
-      quantity: -1, // 1 sheet consumed
-      reference_type: 'cutting_sheet',
-      reference_id: id, // project_id
-      project_id: id,
-      notes: deductionNote,
-    });
-
-    // Release 1 from reservation if any
-    if (match.reserved_quantity > 0) {
-      await supabase
-        .from('stock_items')
-        .update({ reserved_quantity: Math.max(0, match.reserved_quantity - 1) })
-        .eq('id', match.id);
+      if (!res.ok) {
+        const data = await res.json();
+        console.error('Stock deduction failed:', data.error);
+      }
+    } catch {
+      console.error('Network error during stock deduction');
     }
   }, [id]);
 
