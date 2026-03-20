@@ -80,8 +80,12 @@ export default function QuoteDetailPage() {
   }
 
   const [accepting, setAccepting] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
 
   async function updateStatus(status: string) {
+    // Prevent double-click on any status action
+    if (statusBusy) return;
+    setStatusBusy(true);
     setActionError('');
     setSuccessMsg('');
 
@@ -98,26 +102,35 @@ export default function QuoteDetailPage() {
       if (!res.ok) {
         showError(data.error || 'Failed to update quote status');
         setAccepting(false);
+        setStatusBusy(false);
         return;
       }
 
       if (data.warning) {
         showError(data.warning);
         setAccepting(false);
+        setStatusBusy(false);
       } else if (status === 'accepted') {
-        // Workflow: Accept → redirect to project production page
-        router.push(`/projects/${quote?.project_id}/production`);
+        // Workflow: Accept → redirect to production page
+        if (data.production_order_id) {
+          router.push(`/production/${data.production_order_id}`);
+        } else {
+          router.push(`/projects/${quote?.project_id}/production`);
+        }
         return;
       } else if (status === 'sent') {
         showSuccess('Quote marked as sent.');
+        setStatusBusy(false);
       } else if (status === 'rejected') {
         showSuccess('Quote marked as rejected.');
+        setStatusBusy(false);
       }
 
       loadData();
     } catch {
       showError('Network error');
       setAccepting(false);
+      setStatusBusy(false);
     }
   }
 
@@ -276,8 +289,8 @@ export default function QuoteDetailPage() {
       {quote.status === 'draft' && (
         <Card className="border-blue-200 bg-blue-50/50">
           <CardContent>
-            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => updateStatus('sent')}>
-              {t('quotes.sent')} <ArrowRight size={18} className="ml-2" />
+            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => updateStatus('sent')} disabled={statusBusy}>
+              {statusBusy ? 'Sending...' : t('quotes.sent')} <ArrowRight size={18} className="ml-2" />
             </Button>
           </CardContent>
         </Card>
@@ -285,10 +298,10 @@ export default function QuoteDetailPage() {
       {quote.status === 'sent' && (
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent className="space-y-2">
-            <Button variant="success" className="w-full py-3 text-base font-semibold" onClick={() => updateStatus('accepted')} disabled={accepting}>
+            <Button variant="success" className="w-full py-3 text-base font-semibold" onClick={() => updateStatus('accepted')} disabled={accepting || statusBusy}>
               {accepting ? 'Creating production...' : 'Accept & Start Production'} <ArrowRight size={18} className="ml-2" />
             </Button>
-            <button className="w-full text-center text-xs text-red-400 hover:text-red-600 py-1" onClick={() => updateStatus('rejected')}>
+            <button className="w-full text-center text-xs text-red-400 hover:text-red-600 py-1" onClick={() => updateStatus('rejected')} disabled={statusBusy}>
               Reject quote
             </button>
           </CardContent>

@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { PRODUCTION_STATIONS } from '@/lib/constants';
 import { useRealtime } from '@/lib/hooks/useRealtime';
-import { ArrowLeft, Clock, User, Factory, ScanLine, Printer, ArrowRight, Scissors } from 'lucide-react';
+import { ArrowLeft, Clock, User, Factory, ScanLine, Printer, ArrowRight, Scissors, DollarSign } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -88,10 +88,13 @@ export default function ProductionOrderDetailPage() {
   const [workflowBusy, setWorkflowBusy] = useState(false);
 
   async function startOrder() {
+    if (workflowBusy) return;
+    // Guard: only transition from pending
+    if (order?.status !== 'pending') return;
     setWorkflowBusy(true);
     await supabase.from('production_orders').update({
       status: 'in_progress', started_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    }).eq('id', id);
+    }).eq('id', id).eq('status', 'pending'); // DB-level guard
     setWorkflowBusy(false);
     loadData();
   }
@@ -108,13 +111,7 @@ export default function ProductionOrderDetailPage() {
   const progressPct = parts.length > 0 ? (completedParts / parts.length) * 100 : 0;
   const daysElapsed = order.started_at ? Math.floor((Date.now() - new Date(order.started_at).getTime()) / 86400000) : 0;
 
-  async function completeOrder() {
-    if (!confirm('Mark this production order as completed?')) return;
-    await supabase.from('production_orders').update({
-      status: 'completed', completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    }).eq('id', id);
-    loadData();
-  }
+  // Production completion is handled by the Cutting page "Finish Cutting" workflow
 
   return (
     <RoleGuard allowedRoles={['ceo', 'workshop_manager', 'workshop_worker'] as any[]}>
@@ -155,13 +152,14 @@ export default function ProductionOrderDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Workflow: ONE primary action per status */}
+      {/* Workflow: ONE primary action per status — strict transitions */}
       {order.status === 'pending' && (
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent>
             <Button variant="success" className="w-full py-3 text-base font-semibold" onClick={startOrder} disabled={workflowBusy}>
               <Factory size={18} className="mr-2" /> {workflowBusy ? 'Starting...' : 'Start Production'} <ArrowRight size={18} className="ml-2" />
             </Button>
+            <p className="text-xs text-gray-500 text-center mt-2">pending &rarr; in_progress</p>
           </CardContent>
         </Card>
       )}
@@ -171,15 +169,17 @@ export default function ProductionOrderDetailPage() {
             <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => router.push(`/projects/${order.project_id}/cutting-list`)}>
               <Scissors size={18} className="mr-2" /> Start Cutting <ArrowRight size={18} className="ml-2" />
             </Button>
+            <p className="text-xs text-gray-500 text-center mt-2">in_progress &rarr; cutting</p>
           </CardContent>
         </Card>
       )}
       {order.status === 'completed' && (
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent>
-            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => router.push(`/projects/${order.project_id}`)}>
-              Back to Project <ArrowRight size={18} className="ml-2" />
+            <Button variant="primary" className="w-full py-3 text-base font-semibold" onClick={() => router.push('/finance/payments')}>
+              <DollarSign size={18} className="mr-2" /> Go to Finance <ArrowRight size={18} className="ml-2" />
             </Button>
+            <p className="text-xs text-gray-500 text-center mt-2">Production complete</p>
           </CardContent>
         </Card>
       )}
@@ -200,10 +200,8 @@ export default function ProductionOrderDetailPage() {
             <div className={`h-full rounded-full transition-all ${progressPct >= 100 ? 'bg-emerald-500' : progressPct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`}
               style={{ width: `${progressPct}%` }} />
           </div>
-          {order.status === 'in_progress' && progressPct >= 100 && ['ceo', 'workshop_manager'].includes(profile?.role || '') && (
-            <Button variant="success" fullWidth className="mt-3" onClick={completeOrder}>
-              {t('common.save')}
-            </Button>
+          {order.status === 'in_progress' && progressPct >= 100 && (
+            <p className="text-xs text-center text-emerald-600 mt-2 font-medium">All parts at packing — finish via Cutting page</p>
           )}
         </Card>
       )}

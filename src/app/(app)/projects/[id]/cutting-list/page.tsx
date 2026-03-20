@@ -7,7 +7,7 @@ import { RoleGuard } from '@/components/auth/RoleGuard';
 import ProjectMfgTabs from '@/components/projects/ProjectMfgTabs';
 import {
   ArrowLeft, Download, Scissors, RefreshCw, CheckCircle,
-  AlertTriangle, Package, LayoutGrid, Zap, ArrowRight,
+  AlertTriangle, Package, LayoutGrid, Zap, ArrowRight, DollarSign,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -220,21 +220,31 @@ function CuttingListContent() {
   const [missingParts,    setMissingParts]    = useState(0);
   const [finishingCutting, setFinishingCutting] = useState(false);
   const [finishError,     setFinishError]     = useState<string | null>(null);
+  const [productionCompleted, setProductionCompleted] = useState(false);
 
   // ── Fetch project ──
   const fetchProject = useCallback(async () => {
     setLoadingProject(true);
-    const { data, error: err } = await supabase
-      .from('projects')
-      .select('id, reference_code, client_name, status')
-      .eq('id', id)
-      .single();
+    const [projRes, prodRes] = await Promise.all([
+      supabase
+        .from('projects')
+        .select('id, reference_code, client_name, status')
+        .eq('id', id)
+        .single(),
+      supabase
+        .from('production_orders')
+        .select('id, status')
+        .eq('project_id', id)
+        .eq('status', 'completed')
+        .limit(1),
+    ]);
     setLoadingProject(false);
-    if (err || !data) {
+    if (projRes.error || !projRes.data) {
       setError('Projet introuvable.');
       return;
     }
-    setProject(data);
+    setProject(projRes.data);
+    setProductionCompleted((prodRes.data || []).length > 0);
   }, [id]);
 
   // ── Fetch cutting list ──
@@ -407,16 +417,22 @@ function CuttingListContent() {
 
   // ── Finish Cutting: validate all cut, deduct remaining stock, mark production complete ──
   const handleFinishCutting = useCallback(async () => {
+    // Idempotency guard: if already completed, just redirect
+    if (productionCompleted) {
+      router.push('/finance/payments');
+      return;
+    }
+    if (finishingCutting) return; // prevent double-click
+
     setFinishingCutting(true);
     setFinishError(null);
 
     try {
-      // 1. Check all parts are cut
+      // 1. Mark all remaining uncut parts as cut
       const uncutParts = entries.filter(
         (e) => e.project_part_id && !partsCutMap.get(e.project_part_id),
       );
       if (uncutParts.length > 0) {
-        // Mark remaining parts as cut
         const uncutIds = [...new Set(uncutParts.map((e) => e.project_part_id!).filter(Boolean))];
         if (uncutIds.length > 0) {
           await supabase.from('project_parts').update({ is_cut: true }).in('id', uncutIds);
@@ -428,7 +444,7 @@ function CuttingListContent() {
         }
       }
 
-      // 2. Deduct stock for any sheets not yet deducted
+      // 2. Deduct stock for any sheets not yet deducted (idempotent — 409 on duplicate)
       const sheetKeys = new Set<string>();
       for (const e of entries) {
         sheetKeys.add(`${e.panel_type}__${e.sheet_number}`);
@@ -442,7 +458,7 @@ function CuttingListContent() {
         await deductStockForSheet(panelType, sheetNumber, sheetEntries);
       }
 
-      // 3. Mark production order as completed
+      // 3. Mark production order as completed (DB guard: only update if not already completed)
       const { data: prodOrders } = await supabase
         .from('production_orders')
         .select('id')
@@ -455,16 +471,16 @@ function CuttingListContent() {
           status: 'completed',
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        }).eq('id', prodOrders[0].id);
+        }).eq('id', prodOrders[0].id).in('status', ['pending', 'in_progress']); // DB-level guard
       }
 
-      // 4. Redirect to project page
-      router.push(`/projects/${id}`);
+      // 4. Redirect to Finance
+      router.push('/finance/payments');
     } catch {
       setFinishError('Erreur lors de la finalisation de la découpe.');
       setFinishingCutting(false);
     }
-  }, [entries, partsCutMap, deductStockForSheet, id, router]);
+  }, [entries, partsCutMap, deductStockForSheet, id, router, productionCompleted, finishingCutting]);
 
   // ── Derived stats ──
   const totalSheets = entries.length
@@ -850,7 +866,7 @@ function CuttingListContent() {
 
         {/* ── Workflow: Finish Cutting ── */}
         {!loadingEntries && entries.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 overflow-hidden">
+          <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${productionCompleted ? 'border-blue-200' : 'border-emerald-200'}`}>
             <div className="px-5 py-4">
               {finishError && (
                 <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
@@ -858,23 +874,39 @@ function CuttingListContent() {
                   <p className="text-red-600 text-sm">{finishError}</p>
                 </div>
               )}
-              <button
-                onClick={handleFinishCutting}
-                disabled={finishingCutting}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold rounded-xl transition-colors text-base"
-              >
-                {finishingCutting ? (
-                  <RefreshCw className="h-5 w-5 animate-spin" />
-                ) : (
-                  <CheckCircle className="h-5 w-5" />
-                )}
-                {finishingCutting ? 'Finalisation en cours...' : 'Terminer la Découpe'}
-                {!finishingCutting && <ArrowRight className="h-5 w-5 ml-1" />}
-              </button>
-              {uncutCount > 0 && !finishingCutting && (
-                <p className="text-xs text-gray-500 text-center mt-2">
-                  {uncutCount} pièce(s) restante(s) seront marquées comme débitées
-                </p>
+              {productionCompleted ? (
+                <button
+                  onClick={() => router.push('/finance/payments')}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors text-base"
+                >
+                  <DollarSign className="h-5 w-5" />
+                  Go to Finance
+                  <ArrowRight className="h-5 w-5 ml-1" />
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleFinishCutting}
+                    disabled={finishingCutting}
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold rounded-xl transition-colors text-base"
+                  >
+                    {finishingCutting ? (
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <CheckCircle className="h-5 w-5" />
+                    )}
+                    {finishingCutting ? 'Finalisation en cours...' : 'Terminer la Découpe'}
+                    {!finishingCutting && <ArrowRight className="h-5 w-5 ml-1" />}
+                  </button>
+                  {uncutCount > 0 && !finishingCutting && (
+                    <p className="text-xs text-gray-500 text-center mt-2">
+                      {uncutCount} pièce(s) restante(s) seront marquées comme débitées
+                    </p>
+                  )}
+                </>
+              )}
+              {productionCompleted && (
+                <p className="text-xs text-emerald-600 text-center mt-2 font-medium">Cutting complete — production finished</p>
               )}
             </div>
           </div>
