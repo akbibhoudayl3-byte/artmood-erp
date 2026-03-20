@@ -44,7 +44,45 @@ export default function NewQuotePage() {
   ]);
   const [saving, setSaving] = useState(false);
   const [loadingBom, setLoadingBom] = useState(false);
+  const [laborCost, setLaborCost] = useState('');
+  const [transportCost, setTransportCost] = useState('');
+  const [generatingFromBom, setGeneratingFromBom] = useState(false);
+  const [bomError, setBomError] = useState('');
 
+  // PRIMARY FLOW: Generate quote deterministically from BOM via API
+  async function generateFromBom() {
+    if (!projectId) return;
+    setGeneratingFromBom(true);
+    setBomError('');
+
+    try {
+      const res = await fetch('/api/bom/generate-quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          labor_cost: parseFloat(laborCost) || 0,
+          transport_cost: parseFloat(transportCost) || 0,
+          discount_percent: parseFloat(discountPercent) || 0,
+          valid_until: validUntil || null,
+          notes: notes || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.quote) {
+        router.push(`/quotes/${data.quote.id}`);
+      } else {
+        setBomError(data.error || 'Failed to generate quote from BOM');
+        setGeneratingFromBom(false);
+      }
+    } catch {
+      setBomError('Network error');
+      setGeneratingFromBom(false);
+    }
+  }
+
+  // SECONDARY FLOW: Legacy manual import for populating line items
   async function importFromBom() {
     if (!projectId) return;
     setLoadingBom(true);
@@ -60,7 +98,6 @@ export default function NewQuotePage() {
       return;
     }
 
-    // Group by material_type
     const matGroups: Record<string, { count: number; area_mm2: number; edgeLength_mm: number }> = {};
     for (const p of parts) {
       const key = p.material_type || 'other';
@@ -81,7 +118,6 @@ export default function NewQuotePage() {
     };
 
     const newLines: LineItem[] = [];
-
     for (const [matType, group] of Object.entries(matGroups)) {
       const label = MATERIAL_LABELS[matType] || matType;
       const areaM2 = (group.area_mm2 / 1e6).toFixed(2);
@@ -93,7 +129,6 @@ export default function NewQuotePage() {
       });
     }
 
-    // Edge banding total
     const totalEdge = Object.values(matGroups).reduce((s, g) => s + g.edgeLength_mm, 0);
     if (totalEdge > 0) {
       newLines.push({
@@ -104,7 +139,6 @@ export default function NewQuotePage() {
       });
     }
 
-    // Standard service lines
     newLines.push(
       { description: 'Main d\'oeuvre — Fabrication', quantity: '1', unit: 'forfait', unit_price: '' },
       { description: 'Transport et Installation', quantity: '1', unit: 'forfait', unit_price: '' },
@@ -215,20 +249,53 @@ export default function NewQuotePage() {
         </CardContent>
       </Card>
 
-      {/* BOM Import */}
+      {/* BOM-driven quote generation (PRIMARY) */}
+      {projectId && (
+        <Card>
+          <CardContent>
+            <h3 className="font-semibold text-sm text-[#1a1a2e] mb-3">Générer depuis BOM (recommandé)</h3>
+            <p className="text-xs text-[#64648B] mb-3">
+              Crée le devis automatiquement depuis le BOM : matériaux, quincaillerie, chants.
+            </p>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <Input label="Main d'oeuvre (MAD)" type="number" value={laborCost}
+                onChange={e => setLaborCost(e.target.value)} min="0" placeholder="0" />
+              <Input label="Transport/Installation (MAD)" type="number" value={transportCost}
+                onChange={e => setTransportCost(e.target.value)} min="0" placeholder="0" />
+            </div>
+            {bomError && (
+              <p className="text-xs text-red-600 mb-2">{bomError}</p>
+            )}
+            <button
+              onClick={generateFromBom}
+              disabled={generatingFromBom}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#1E2F52] hover:bg-[#2a3f6b] disabled:bg-gray-300 text-white text-sm font-medium rounded-xl transition-colors"
+            >
+              {generatingFromBom ? (
+                <RefreshCw size={14} className="animate-spin" />
+              ) : (
+                <Zap size={14} />
+              )}
+              {generatingFromBom ? 'Génération en cours…' : 'Générer devis depuis BOM'}
+            </button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Manual BOM import for line editing (SECONDARY) */}
       {projectId && (
         <div className="flex gap-2">
           <button
             onClick={importFromBom}
             disabled={loadingBom}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#1E2F52] hover:bg-[#2a3f6b] disabled:bg-gray-300 text-white text-sm font-medium rounded-xl transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-[#E8E5E0] hover:bg-gray-50 disabled:bg-gray-100 text-[#64648B] text-sm font-medium rounded-xl transition-colors"
           >
             {loadingBom ? (
               <RefreshCw size={14} className="animate-spin" />
             ) : (
               <Zap size={14} />
             )}
-            {loadingBom ? 'Import BOM en cours…' : 'Importer depuis BOM'}
+            {loadingBom ? 'Import en cours…' : 'Remplir lignes depuis BOM (manuel)'}
           </button>
         </div>
       )}

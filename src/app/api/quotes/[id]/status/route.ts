@@ -89,8 +89,12 @@ export async function PATCH(
     );
   }
 
-  // When accepted, sync total_amount to the linked project
+  // When accepted: sync total_amount + auto-create production order from BOM
+  let productionOrderId: string | null = null;
+  let productionWarning: string | null = null;
+
   if (newStatus === 'accepted' && quote.project_id && quote.total_amount != null) {
+    // A. Sync total_amount to project
     const { error: projErr } = await supabase
       .from('projects')
       .update({
@@ -105,7 +109,115 @@ export async function PATCH(
         { status: 200 },
       );
     }
+
+    // B. Auto-create production order from BOM (if BOM exists)
+    const { data: bomParts } = await supabase
+      .from('project_parts')
+      .select('*')
+      .eq('project_id', quote.project_id);
+
+    if (bomParts && bomParts.length > 0) {
+      // Get project info
+      const { data: project } = await supabase
+        .from('projects')
+        .select('reference_code')
+        .eq('id', quote.project_id)
+        .single();
+
+      const orderName = `Production ${project?.reference_code || ''} — ${bomParts.length} pièces`;
+
+      // Create production order
+      const { data: order, error: orderErr } = await supabase
+        .from('production_orders')
+        .insert({
+          project_id: quote.project_id,
+          name: orderName,
+          notes: `Auto-créé à l'acceptation du devis v${quote.version || '?'}. ${bomParts.length} pièces.`,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (!orderErr && order) {
+        productionOrderId = order.id;
+
+        // Create production_parts from BOM snapshot
+        const prodParts = bomParts.map((p: any, idx: number) => ({
+          production_order_id: order.id,
+          part_name: p.part_name || p.part_code || `Pièce ${idx + 1}`,
+          part_code: p.part_code || `P-${String(idx + 1).padStart(3, '0')}`,
+          current_station: 'cutting',
+          notes: `${p.material_type} | ${p.width_mm}x${p.height_mm}mm | Qté: ${p.quantity}`,
+        }));
+
+        for (let i = 0; i < prodParts.length; i += 500) {
+          await supabase.from('production_parts').insert(prodParts.slice(i, i + 500));
+        }
+
+        // Create material requirements from BOM
+        const PANEL_SIZES: Record<string, [number, number]> = {
+          mdf_18: [1220, 2800], mdf_16: [1220, 2800], mdf_12: [1220, 2800],
+          stratifie_18: [1830, 2550], stratifie_16: [1830, 2550],
+          back_hdf_5: [1220, 2440], back_mdf_8: [1220, 2440],
+        };
+
+        const matGroups: Record<string, { area_mm2: number; count: number }> = {};
+        for (const p of bomParts) {
+          const key = (p as any).material_type || 'other';
+          if (!matGroups[key]) matGroups[key] = { area_mm2: 0, count: 0 };
+          matGroups[key].area_mm2 += ((p as any).width_mm * (p as any).height_mm * ((p as any).quantity || 1));
+          matGroups[key].count += ((p as any).quantity || 1);
+        }
+
+        // Match materials to stock and create requirements
+        const { data: stockItems } = await supabase
+          .from('stock_items')
+          .select('id, name, reserved_quantity')
+          .eq('is_active', true)
+          .eq('stock_tracking', true);
+
+        for (const [matType, group] of Object.entries(matGroups)) {
+          const [panelW, panelH] = PANEL_SIZES[matType] || [1220, 2800];
+          const sheetsNeeded = Math.ceil((group.area_mm2 / (panelW * panelH)) * 1.15);
+          const areaM2 = group.area_mm2 / 1e6;
+
+          const lower = matType.toLowerCase();
+          const match = (stockItems || []).find((s: any) => {
+            const sn = s.name.toLowerCase();
+            return sn.includes(lower.split('_')[0]) ||
+              (lower.includes('hdf') && sn.includes('hdf')) ||
+              (lower.includes('mdf') && !lower.includes('hdf') && sn.includes('mdf') && !sn.includes('hdf')) ||
+              (lower.includes('stratif') && sn.includes('stratif'));
+          });
+
+          if (match) {
+            await supabase.from('stock_items')
+              .update({ reserved_quantity: (match as any).reserved_quantity + sheetsNeeded })
+              .eq('id', (match as any).id);
+
+            await supabase.from('production_material_requirements').insert({
+              production_order_id: order.id,
+              material_id: (match as any).id,
+              planned_qty: sheetsNeeded,
+              unit: 'panel',
+              status: 'reserved',
+              notes: `BOM auto: ${matType} — ${group.count} pièces (${areaM2.toFixed(2)} m²)`,
+            });
+          }
+        }
+      } else {
+        productionWarning = 'Quote accepted but production order creation failed: ' + (orderErr?.message || 'Unknown');
+      }
+    } else {
+      productionWarning = 'Quote accepted but no BOM parts found — production order not created.';
+    }
   }
 
-  return NextResponse.json({ status: newStatus, quote_id: id }, { status: 200 });
+  return NextResponse.json({
+    status: newStatus,
+    quote_id: id,
+    production_order_id: productionOrderId,
+    ...(productionWarning ? { warning: productionWarning } : {}),
+  }, { status: 200 });
 }
