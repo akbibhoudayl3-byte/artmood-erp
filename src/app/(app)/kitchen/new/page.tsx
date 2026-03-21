@@ -748,14 +748,27 @@ export default function KitchenPipelinePage() {
                 {/* Status banner */}
                 {(() => {
                   const hasRed = fillerSuggestions.some(f => f.suggestion === 'overflow');
-                  const hasWarning = fillerSuggestions.some(f => f.suggestion !== 'ok');
+                  const hasNonOk = fillerSuggestions.filter(f => f.suggestion !== 'ok');
+                  const onlySmallGaps = hasNonOk.length > 0 && !hasRed && hasNonOk.every(f => Math.abs(f.gap_mm) <= 100);
+                  const isPerfect = hasNonOk.length === 0;
+
+                  const label = isPerfect
+                    ? 'Cuisine validée \u2705'
+                    : onlySmallGaps
+                    ? 'Cuisine prête avec ajustements mineurs \u2705'
+                    : hasRed
+                    ? 'Ajustement requis avant validation'
+                    : 'À ajuster';
+
+                  const style = isPerfect || onlySmallGaps
+                    ? 'bg-emerald-50 border border-emerald-200'
+                    : hasRed
+                    ? 'bg-[#FFF8F0] border border-[#E8D5C0]'
+                    : 'bg-[#FAFAF8] border border-[#E8E5E0]';
+
                   return (
-                    <div className={`p-4 rounded-xl text-center ${
-                      hasRed ? 'bg-red-50 border border-red-200' :
-                      hasWarning ? 'bg-amber-50 border border-amber-200' :
-                      'bg-emerald-50 border border-emerald-200'
-                    }`}>
-                      <span className="text-lg">{!hasWarning ? 'Cuisine validée \u2705' : 'Corrections nécessaires \u26A0\uFE0F'}</span>
+                    <div className={`p-4 rounded-xl text-center ${style}`}>
+                      <span className="text-lg">{label}</span>
                     </div>
                   );
                 })()}
@@ -779,16 +792,14 @@ export default function KitchenPipelinePage() {
                         {/* Issue line (if any) */}
                         {f.suggestion !== 'ok' && (
                           <div className={`flex items-center gap-1.5 text-xs ${
-                            f.suggestion === 'overflow' ? 'text-red-600' : 'text-amber-600'
+                            f.suggestion === 'overflow' ? 'text-[#B8845A]' : 'text-[#64648B]'
                           }`}>
-                            {f.suggestion === 'overflow'
-                              ? <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                              : <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />}
+                            <ArrowRight className="w-3 h-3 flex-shrink-0" />
                             <span>
-                              {f.suggestion === 'overflow' ? `dépassement ${Math.abs(f.gap_mm)}mm → réduire un meuble` :
-                               f.suggestion === 'filler_needed' ? `manque ${f.gap_mm}mm → ajouter joint` :
-                               f.suggestion === 'add_module' ? `${f.gap_mm}mm libre → ajouter meuble` :
-                               f.suggestion === 'too_small' ? `espace trop petit (${f.gap_mm}mm)` :
+                              {f.suggestion === 'overflow' ? `${Math.abs(f.gap_mm)}mm en trop — ajuster un meuble` :
+                               f.suggestion === 'filler_needed' ? `joint de ${f.gap_mm}mm recommandé` :
+                               f.suggestion === 'add_module' ? `place pour un meuble de ${f.gap_mm}mm` :
+                               f.suggestion === 'too_small' ? `petit espace (${f.gap_mm}mm) — joint possible` :
                                f.message}
                             </span>
                           </div>
@@ -823,7 +834,7 @@ export default function KitchenPipelinePage() {
                   Continuer <ArrowRight className="w-4 h-4" />
                 </Button>
                 {fillerSuggestions.some(f => f.suggestion === 'overflow') && (
-                  <p className="text-xs text-red-500 text-center">Corrigez les dépassements pour continuer</p>
+                  <p className="text-xs text-[#64648B] text-center">Ajustez les murs en trop pour continuer</p>
                 )}
               </>
             )}
