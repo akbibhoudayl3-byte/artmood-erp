@@ -447,11 +447,16 @@ export default function KitchenPipelinePage() {
       {step === 1 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
-            <Input label="Client" value={kitchen.client_name ?? ''} placeholder="Mme Amrani"
+            <div>
+              <h2 className="text-base font-bold text-[#1a1a2e]">Le client</h2>
+              <p className="text-xs text-[#64648B]">Identifiez le projet en quelques champs</p>
+            </div>
+
+            <Input label="Nom du client" value={kitchen.client_name ?? ''} placeholder="Mme Amrani"
               onChange={e => setKitchen(p => ({ ...p, client_name: e.target.value }))} />
 
             <div className="grid grid-cols-2 gap-3">
-              <Select label="Profil" value={kitchen.client_type ?? 'standard'}
+              <Select label="Type client" value={kitchen.client_type ?? 'standard'}
                 onChange={e => setKitchen(p => ({ ...p, client_type: e.target.value as ClientType }))}
                 options={[
                   { value: 'standard', label: 'Standard' },
@@ -460,7 +465,7 @@ export default function KitchenPipelinePage() {
                   { value: 'architecte', label: 'Architecte' },
                   { value: 'urgent', label: 'Urgent' },
                 ]} />
-              <Select label="Style" value={kitchen.kitchen_type ?? 'modern'}
+              <Select label="Style cuisine" value={kitchen.kitchen_type ?? 'modern'}
                 onChange={e => setKitchen(p => ({ ...p, kitchen_type: e.target.value }))}
                 options={[
                   { value: 'modern', label: 'Moderne' },
@@ -487,6 +492,14 @@ export default function KitchenPipelinePage() {
       {step === 2 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Le plan</h2>
+                <p className="text-xs text-[#64648B]">Choisissez la forme et les murs</p>
+              </div>
+              <button onClick={() => setStep(1)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
+
             {/* Visual layout blocks */}
             <div className="grid grid-cols-3 gap-3">
               {(['I', 'L', 'U'] as LayoutType[]).map(layout => {
@@ -498,7 +511,6 @@ export default function KitchenPipelinePage() {
                         ? 'border-[#C9956B] bg-[#C9956B]/5'
                         : 'border-[#E8E5E0] hover:border-[#C9956B]/30'
                     }`}>
-                    {/* Kitchen shape visual */}
                     <div className="flex items-end justify-center h-10 mb-2">
                       {layout === 'I' && (
                         <div className={`w-16 h-3 rounded-sm ${selected ? 'bg-[#C9956B]' : 'bg-[#D1CFC9]'}`} />
@@ -527,7 +539,7 @@ export default function KitchenPipelinePage() {
 
             {/* Wall dimensions */}
             {wallInputs.map((w, i) => (
-              <Input key={i} label={`Mur ${w.wall_name} (mm)`} type="number"
+              <Input key={i} label={`Longueur mur ${w.wall_name} (mm)`} type="number"
                 value={w.wall_length_mm}
                 onChange={e => {
                   const val = parseInt(e.target.value) || 0;
@@ -546,6 +558,13 @@ export default function KitchenPipelinePage() {
       {step === 3 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Modules</h2>
+                <p className="text-xs text-[#64648B]">Ajoutez ou ajustez les modules</p>
+              </div>
+              <button onClick={() => setStep(2)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
             {walls.map(wall => {
               const wallMods = placedModules.filter(m => m.wall_id === wall.id);
               const totalW = wallMods.reduce((s, m) => s + m.width_mm, 0);
@@ -612,6 +631,13 @@ export default function KitchenPipelinePage() {
       {step === 4 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Options</h2>
+                <p className="text-xs text-[#64648B]">Choisissez ouverture et matériaux</p>
+              </div>
+              <button onClick={() => setStep(3)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               {(['handles', 'gola', 'push'] as OpeningSystem[]).map(os => (
                 <button key={os} onClick={() => setKitchen(p => ({ ...p, opening_system: os }))}
@@ -663,6 +689,13 @@ export default function KitchenPipelinePage() {
       {step === 5 && (
         <Card>
           <CardContent className="space-y-3 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Façades</h2>
+                <p className="text-xs text-[#64648B]">Personnalisez chaque façade</p>
+              </div>
+              <button onClick={() => setStep(4)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
 
             {savedModules.map((m, i) => {
               const mod = availableModules.find(am => am.id === m.module_id);
@@ -698,6 +731,13 @@ export default function KitchenPipelinePage() {
       {step === 6 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Vérification</h2>
+                <p className="text-xs text-[#64648B]">Détection automatique des ajustements</p>
+              </div>
+              <button onClick={() => setStep(5)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
             {!detectionDone ? (
               <Button onClick={runDetection} loading={loading} fullWidth size="lg" variant="accent">
                 Lancer la détection <CheckCircle className="w-4 h-4" />
@@ -748,6 +788,13 @@ export default function KitchenPipelinePage() {
       {step === 7 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Tarification</h2>
+                <p className="text-xs text-[#64648B]">Calcul automatique du prix</p>
+              </div>
+              <button onClick={() => setStep(6)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
             <Button onClick={computePrice} loading={loading} fullWidth size="lg" variant="accent">
               Continuer <ArrowRight className="w-4 h-4" />
             </Button>
@@ -759,6 +806,13 @@ export default function KitchenPipelinePage() {
       {step === 8 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Résumé</h2>
+                <p className="text-xs text-[#64648B]">Vérifiez les coûts détaillés</p>
+              </div>
+              <button onClick={() => setStep(7)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
             {cost && (
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -802,6 +856,14 @@ export default function KitchenPipelinePage() {
       {step === 9 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Finalisation</h2>
+                <p className="text-xs text-[#64648B]">Sauvegardez ou validez le projet</p>
+              </div>
+              <button onClick={() => setStep(8)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
+            </div>
+
             {validation && (
               <div className={`p-3 rounded-xl text-sm font-medium text-center ${
                 validation.overall === 'green' ? 'bg-emerald-50 text-emerald-700' :
