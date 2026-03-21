@@ -8,7 +8,7 @@ import type { Payment } from './finance';
 export type LeadStatus = 'new' | 'contacted' | 'visit_scheduled' | 'quote_sent' | 'won' | 'lost';
 export type LeadSource = 'instagram' | 'facebook' | 'google' | 'architect' | 'referral' | 'walk_in' | 'website' | 'other';
 
-export type ProjectStatus = 'measurements' | 'design' | 'client_validation' | 'production' | 'installation' | 'delivered' | 'cancelled';
+export type ProjectStatus = 'draft' | 'measurements_confirmed' | 'design_validated' | 'bom_generated' | 'ready_for_production' | 'in_production' | 'installation' | 'delivered' | 'cancelled';
 export type ProjectType = 'kitchen' | 'dressing' | 'furniture' | 'other';
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 
@@ -101,6 +101,12 @@ export interface Project {
   estimated_production_end: string | null;
   estimated_installation_date: string | null;
   actual_delivery_date: string | null;
+  status_updated_at: string | null;
+  bom_generated_at: string | null;
+  production_started_at: string | null;
+  delivered_at: string | null;
+  cancelled_at: string | null;
+  cancelled_reason: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;

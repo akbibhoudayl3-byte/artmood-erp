@@ -29,16 +29,23 @@
  *   Integrity checks are run on demand (CEO) and after critical operations.
  */
 
-// ── Project State Machine ─────────────────────────────────────────────────────
+// ── Project Workflow State Machine ────────────────────────────────────────────
 export {
   validateProjectTransition,
   guardProjectTransition,
+  isValidProjectTransition,
+  getAvailableProjectTransitions,
+  getProjectStatusLabel,
+  getProjectStepIndex,
+  VALID_PROJECT_TRANSITIONS,
+  PROJECT_PIPELINE_ORDER,
+  // Backward-compatible aliases
   isValidTransition,
   getAvailableTransitions,
   getStatusLabel,
   VALID_TRANSITIONS,
 } from '@/lib/integrity/project-fsm';
-export type { TransitionResult } from '@/lib/integrity/project-fsm';
+export type { ProjectTransitionResult, TransitionResult } from '@/lib/integrity/project-fsm';
 
 // ── Lead Pipeline State Machine ────────────────────────────────────────────────
 export {

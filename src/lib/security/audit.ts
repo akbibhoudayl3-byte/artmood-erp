@@ -8,7 +8,8 @@ export type AuditAction =
   | "stock_change" | "production_change" | "setting_change"
   | "consume" | "refund" | "lead_transition" | "station_transition"
   | "installation_complete" | "project_lock" | "workflow_violation"
-  | "lead_converted_to_project";
+  | "lead_converted_to_project"
+  | "project_status_changed";
 
 export interface AuditPayload {
   action: AuditAction;

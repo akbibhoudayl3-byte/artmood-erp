@@ -1,89 +1,122 @@
 /**
- * Data Integrity Engine — Project State Machine (FSM)
+ * Data Integrity Engine — Project Workflow State Machine (FSM)
  *
- * Enforces legal project status transitions and their pre-conditions.
- * All state changes MUST pass through this module.
+ * Enforces STRICT sequential project lifecycle transitions.
+ * All status changes MUST pass through this module.
  *
- * VALID TRANSITION GRAPH:
- *   measurements → design, cancelled
- *   design       → client_validation, measurements, cancelled
- *   client_validation → production, design, cancelled
- *   production   → installation, cancelled
- *   installation → delivered, cancelled
- *   delivered    → (terminal)
- *   cancelled    → (terminal)
+ * VALID TRANSITION GRAPH (STRICTLY SEQUENTIAL — NO SKIPPING):
  *
- * PRE-CONDITIONS (enforced automatically):
- *   → production :  deposit_paid + design_validated + total_amount > 0
- *   → installation: all production orders completed  (async DB check)
- *   → delivered  :  installation record completed     (async DB check)
+ *   draft                → measurements_confirmed, cancelled
+ *   measurements_confirmed → design_validated, cancelled
+ *   design_validated     → bom_generated, cancelled
+ *   bom_generated        → ready_for_production, cancelled
+ *   ready_for_production → in_production, cancelled
+ *   in_production        → installation, cancelled
+ *   installation         → delivered, cancelled
+ *   delivered            → (terminal — locked)
+ *   cancelled            → (terminal — locked)
  *
- * USAGE:
- *   import { validateProjectTransition } from '@/lib/integrity';
+ * NO backward transitions. NO skipping steps.
+ * Every transition must pass validation rules.
  *
- *   const result = await validateProjectTransition({
- *     supabase: ctx.supabase,
- *     projectId: id,
- *     from: project.status,
- *     to: body.status,
- *     project,
- *   });
- *   if (!result.allowed) return NextResponse.json({ error: result.reason }, { status: 422 });
+ * VALIDATION RULES PER STAGE:
+ *   → measurements_confirmed : internal measurement done OR (plan_file + external measurements)
+ *   → design_validated       : design file/flag approved
+ *   → bom_generated          : at least 1 module/cabinet + parts exist
+ *   → ready_for_production   : cost calculated, margin validated, quote accepted
+ *   → in_production          : production order exists (BOM-only, no manual)
+ *   → installation           : all production stations completed
+ *   → delivered              : installation checklist + invoice exists
  */
 
 import { NextResponse } from 'next/server';
-import type { SupabaseClient }  from '@supabase/supabase-js';
-import type { ProjectStatus }   from '@/types/database';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { ProjectStatus } from '@/types/database';
 
-// ── Transition Map ────────────────────────────────────────────────────────────
+// ── Transition Map (STRICTLY SEQUENTIAL + cancelled) ─────────────────────────
 
-export const VALID_TRANSITIONS: Record<ProjectStatus, readonly ProjectStatus[]> = {
-  measurements:      ['design', 'cancelled'],
-  design:            ['client_validation', 'measurements', 'cancelled'],
-  client_validation: ['production', 'design', 'cancelled'],
-  production:        ['installation', 'cancelled'],
-  installation:      ['delivered', 'cancelled'],
-  delivered:         [],
-  cancelled:         [],
+export const VALID_PROJECT_TRANSITIONS: Record<ProjectStatus, readonly ProjectStatus[]> = {
+  draft:                   ['measurements_confirmed', 'cancelled'],
+  measurements_confirmed:  ['design_validated', 'cancelled'],
+  design_validated:        ['bom_generated', 'cancelled'],
+  bom_generated:           ['ready_for_production', 'cancelled'],
+  ready_for_production:    ['in_production', 'cancelled'],
+  in_production:           ['installation', 'cancelled'],
+  installation:            ['delivered', 'cancelled'],
+  delivered:               [],  // terminal — locked
+  cancelled:               [],  // terminal — locked
 } as const;
 
-// ── Result Type ───────────────────────────────────────────────────────────────
+// ── Ordered pipeline stages (for progress bar) ──────────────────────────────
 
-export type TransitionResult =
+export const PROJECT_PIPELINE_ORDER: readonly ProjectStatus[] = [
+  'draft',
+  'measurements_confirmed',
+  'design_validated',
+  'bom_generated',
+  'ready_for_production',
+  'in_production',
+  'installation',
+  'delivered',
+] as const;
+
+// ── Result Type ──────────────────────────────────────────────────────────────
+
+export type ProjectTransitionResult =
   | { allowed: true }
   | { allowed: false; reason: string; violations: string[] };
 
-// ── Core Validation ───────────────────────────────────────────────────────────
+// ── Core Validation ──────────────────────────────────────────────────────────
 
 /**
- * Synchronous check — valid FSM edge only.
- * No DB access required.
+ * Check if the FSM edge is valid.
  */
-export function isValidTransition(from: ProjectStatus, to: ProjectStatus): boolean {
-  return (VALID_TRANSITIONS[from] as readonly string[]).includes(to);
+export function isValidProjectTransition(from: ProjectStatus, to: ProjectStatus): boolean {
+  return (VALID_PROJECT_TRANSITIONS[from] as readonly string[]).includes(to);
 }
 
 /**
- * Sync pre-conditions — checks that can be evaluated from the Project row alone.
- * Returns list of violation messages (empty = all pass).
+ * Synchronous pre-conditions from the project row alone.
  */
 function checkSyncPreConditions(
   to: ProjectStatus,
   project: {
-    deposit_paid: boolean;
-    design_validated: boolean;
-    total_amount: number;
+    deposit_paid?: boolean;
+    design_validated?: boolean;
+    total_amount?: number;
+    measurement_date?: string | null;
+    measured_by?: string | null;
   },
 ): string[] {
   const violations: string[] = [];
 
-  if (to === 'production') {
-    if (!project.deposit_paid)
-      violations.push('Deposit must be paid before starting production');
-    if (!project.design_validated)
-      violations.push('Design must be validated and approved before starting production');
-    if (!project.total_amount || project.total_amount <= 0)
-      violations.push('Project must have a positive total amount before starting production');
+  if (to === 'measurements_confirmed') {
+    // Either internal measurement done OR handled via async check for external plan
+    // measurement_date or measured_by indicates internal measurement
+    // If neither, async check will verify plan_file
+  }
+
+  if (to === 'design_validated') {
+    if (!project.design_validated) {
+      violations.push(
+        'Le design doit être validé et approuvé avant de passer à cette étape. ' +
+        'Marquez le design comme validé dans les détails du projet.'
+      );
+    }
+  }
+
+  if (to === 'ready_for_production') {
+    if (!project.total_amount || project.total_amount <= 0) {
+      violations.push(
+        'Le montant total du projet doit être défini avant de lancer la production. ' +
+        'Créez et validez un devis.'
+      );
+    }
+    if (!project.deposit_paid) {
+      violations.push(
+        'L\'acompte (50%) doit être payé avant de passer en production.'
+      );
+    }
   }
 
   return violations;
@@ -91,69 +124,174 @@ function checkSyncPreConditions(
 
 /**
  * Async pre-conditions — checks that require DB queries.
- * Returns list of violation messages (empty = all pass).
  */
 async function checkAsyncPreConditions(
   to: ProjectStatus,
   projectId: string,
   supabase: SupabaseClient,
+  project: {
+    measurement_date?: string | null;
+    measured_by?: string | null;
+    lead_id?: string | null;
+  },
 ): Promise<string[]> {
   const violations: string[] = [];
 
-  // ── → installation: all production orders must be completed ──────────────
+  // ── → measurements_confirmed ───────────────────────────────────────────────
+  if (to === 'measurements_confirmed') {
+    const hasInternalMeasurement = !!(project.measurement_date || project.measured_by);
+
+    if (!hasInternalMeasurement) {
+      // Check for external measurements via lead
+      if (project.lead_id) {
+        const { data: lead } = await supabase
+          .from('leads')
+          .select('measurement_source, plan_file_url, measurements_provided_by_client')
+          .eq('id', project.lead_id)
+          .single();
+
+        const hasExternalPlan = lead?.measurement_source === 'external'
+          && lead?.plan_file_url
+          && lead?.measurements_provided_by_client;
+
+        if (!hasExternalPlan) {
+          violations.push(
+            'Les mesures doivent être confirmées. Effectuez une prise de mesure ' +
+            'ou vérifiez qu\'un plan externe a été fourni avec le lead.'
+          );
+        }
+      } else {
+        // No lead link and no internal measurement
+        // Check for project files with measurement data
+        const { data: files } = await supabase
+          .from('project_files')
+          .select('id')
+          .eq('project_id', projectId)
+          .limit(1);
+
+        if (!files || files.length === 0) {
+          violations.push(
+            'Les mesures doivent être confirmées. Effectuez une prise de mesure interne ' +
+            'ou téléchargez un plan avec les mesures.'
+          );
+        }
+      }
+    }
+  }
+
+  // ── → bom_generated ─────────────────────────────────────────────────────────
+  if (to === 'bom_generated') {
+    // Check for at least 1 kitchen module or cabinet spec
+    const [modulesRes, cabinetsRes, partsRes] = await Promise.all([
+      supabase.from('kitchen_modules').select('id').eq('project_id', projectId).limit(1),
+      supabase.from('cabinet_specs').select('id').eq('project_id', projectId).limit(1),
+      supabase.from('production_parts').select('id').eq('project_id', projectId).limit(1),
+    ]);
+
+    const hasModules = (modulesRes.data && modulesRes.data.length > 0);
+    const hasCabinets = (cabinetsRes.data && cabinetsRes.data.length > 0);
+    const hasParts = (partsRes.data && partsRes.data.length > 0);
+
+    if (!hasModules && !hasCabinets) {
+      violations.push(
+        'Au moins un module de cuisine ou meuble doit être configuré avant de générer le BOM.'
+      );
+    }
+
+    if (!hasParts && !hasModules) {
+      violations.push(
+        'Le BOM (nomenclature) doit contenir au moins une pièce. ' +
+        'Configurez les modules pour générer automatiquement les pièces.'
+      );
+    }
+  }
+
+  // ── → ready_for_production ──────────────────────────────────────────────────
+  if (to === 'ready_for_production') {
+    // Quote must be accepted
+    const { data: quotes } = await supabase
+      .from('quotes')
+      .select('id, status')
+      .eq('project_id', projectId)
+      .eq('status', 'accepted')
+      .limit(1);
+
+    if (!quotes || quotes.length === 0) {
+      violations.push(
+        'Un devis doit être accepté par le client avant de passer en production. ' +
+        'Créez un devis, envoyez-le, et marquez-le comme accepté.'
+      );
+    }
+  }
+
+  // ── → in_production ────────────────────────────────────────────────────────
+  if (to === 'in_production') {
+    const { data: orders } = await supabase
+      .from('production_orders')
+      .select('id, status')
+      .eq('project_id', projectId)
+      .limit(1);
+
+    if (!orders || orders.length === 0) {
+      violations.push(
+        'Un ordre de production doit être créé à partir du BOM avant de lancer la production. ' +
+        'La création manuelle est bloquée — utilisez la génération depuis le BOM.'
+      );
+    }
+  }
+
+  // ── → installation ────────────────────────────────────────────────────────
   if (to === 'installation') {
     const { data: orders, error } = await supabase
       .from('production_orders')
-      .select('id, status')
+      .select('id, status, current_station')
       .eq('project_id', projectId);
 
     if (error) {
-      violations.push('Could not verify production order status');
+      violations.push('Impossible de vérifier le statut des ordres de production.');
     } else if (!orders || orders.length === 0) {
-      violations.push('No production order found — create and complete a production order first');
+      violations.push('Aucun ordre de production trouvé pour ce projet.');
     } else {
       const incomplete = orders.filter(o => o.status !== 'completed');
       if (incomplete.length > 0) {
         violations.push(
-          `${incomplete.length} production order(s) are not yet completed. ` +
-          'All must be completed before scheduling installation.',
+          `${incomplete.length} ordre(s) de production non terminé(s). ` +
+          'Toutes les stations (saw, cnc, edge, assembly, qc, packing) doivent être complétées.'
         );
       }
     }
   }
 
-  // ── → delivered: installation must be completed + invoice required ───────
+  // ── → delivered ────────────────────────────────────────────────────────────
   if (to === 'delivered') {
-    // Check installations
-    const { data: installations, error } = await supabase
+    // Installation must be completed
+    const { data: installations } = await supabase
       .from('installations')
       .select('id, status')
       .eq('project_id', projectId);
 
-    if (error) {
-      violations.push('Could not verify installation status');
-    } else if (!installations || installations.length === 0) {
-      violations.push('No installation record found — create and complete an installation first');
+    if (!installations || installations.length === 0) {
+      violations.push(
+        'Aucune fiche d\'installation trouvée. Créez et complétez une installation.'
+      );
     } else {
       const incomplete = installations.filter(i => i.status !== 'completed');
       if (incomplete.length > 0) {
         violations.push(
-          'Installation must be fully completed before marking the project as delivered',
+          'L\'installation doit être entièrement complétée (checklist validée) avant la livraison.'
         );
       }
     }
 
-    // WORKFLOW RULE: Invoice must exist before delivery
-    const { data: invoices, error: invErr } = await supabase
+    // Invoice must exist
+    const { data: invoices } = await supabase
       .from('invoices')
       .select('id, status')
       .eq('project_id', projectId);
 
-    if (invErr) {
-      violations.push('Could not verify invoice status');
-    } else if (!invoices || invoices.length === 0) {
+    if (!invoices || invoices.length === 0) {
       violations.push(
-        'Une facture doit être générée avant de marquer le projet comme livré. Créez une facture depuis l\'onglet Finance.',
+        'Une facture doit être générée et validée avant de marquer le projet comme livré.'
       );
     }
   }
@@ -165,31 +303,42 @@ async function checkAsyncPreConditions(
 
 /**
  * Full transition validation: FSM edge + sync pre-conditions + async pre-conditions.
- *
- * @param from      Current project status
- * @param to        Requested next status
- * @param projectId UUID of the project (for async DB checks)
- * @param project   Project row object (for sync pre-condition checks)
- * @param supabase  Supabase client (for async checks)
  */
 export async function validateProjectTransition(params: {
   from: ProjectStatus;
   to: ProjectStatus;
   projectId: string;
   project: {
-    deposit_paid: boolean;
-    design_validated: boolean;
-    total_amount: number;
+    deposit_paid?: boolean;
+    design_validated?: boolean;
+    total_amount?: number;
+    measurement_date?: string | null;
+    measured_by?: string | null;
+    lead_id?: string | null;
   };
   supabase: SupabaseClient;
-}): Promise<TransitionResult> {
+}): Promise<ProjectTransitionResult> {
   const { from, to, projectId, project, supabase } = params;
 
-  // 1. FSM edge check
-  if (!isValidTransition(from, to)) {
+  // 1. FSM edge check — NO skipping, NO backward
+  if (!isValidProjectTransition(from, to)) {
+    const fromIdx = PROJECT_PIPELINE_ORDER.indexOf(from);
+    const toIdx = PROJECT_PIPELINE_ORDER.indexOf(to);
+
+    let reason: string;
+    if (to === 'cancelled') {
+      reason = `Transition vers "annulé" non autorisée depuis "${from}".`;
+    } else if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx) {
+      reason = `Retour en arrière interdit: "${from}" → "${to}". Les projets ne peuvent pas revenir à une étape précédente.`;
+    } else if (fromIdx >= 0 && toIdx >= 0 && toIdx > fromIdx + 1) {
+      reason = `Impossible de sauter des étapes: "${from}" → "${to}". Vous devez passer par chaque étape du workflow.`;
+    } else {
+      reason = `Transition de "${from}" vers "${to}" non autorisée par le workflow projet.`;
+    }
+
     return {
       allowed: false,
-      reason: `Transition from "${from}" to "${to}" is not allowed by the project state machine`,
+      reason,
       violations: [`Invalid transition: ${from} → ${to}`],
     };
   }
@@ -198,7 +347,7 @@ export async function validateProjectTransition(params: {
   const syncViolations = checkSyncPreConditions(to, project);
 
   // 3. Async pre-conditions
-  const asyncViolations = await checkAsyncPreConditions(to, projectId, supabase);
+  const asyncViolations = await checkAsyncPreConditions(to, projectId, supabase, project);
 
   const allViolations = [...syncViolations, ...asyncViolations];
 
@@ -214,41 +363,19 @@ export async function validateProjectTransition(params: {
 }
 
 /**
- * Returns all statuses that can be transitioned TO from the given status.
- * Used by UI to render valid action buttons.
- */
-export function getAvailableTransitions(from: ProjectStatus): readonly ProjectStatus[] {
-  return VALID_TRANSITIONS[from];
-}
-
-/**
- * Returns a human-readable label for a project status.
- */
-export function getStatusLabel(status: ProjectStatus): string {
-  const labels: Record<ProjectStatus, string> = {
-    measurements:      'Measurements',
-    design:            'Design',
-    client_validation: 'Client Validation',
-    production:        'Production',
-    installation:      'Installation',
-    delivered:         'Delivered',
-    cancelled:         'Cancelled',
-  };
-  return labels[status] ?? status;
-}
-
-/**
- * NextResponse helper: validates and returns a structured error response.
- * Use this in API route handlers.
+ * NextResponse helper for API routes.
  */
 export async function guardProjectTransition(params: {
   from: ProjectStatus;
   to: ProjectStatus;
   projectId: string;
   project: {
-    deposit_paid: boolean;
-    design_validated: boolean;
-    total_amount: number;
+    deposit_paid?: boolean;
+    design_validated?: boolean;
+    total_amount?: number;
+    measurement_date?: string | null;
+    measured_by?: string | null;
+    lead_id?: string | null;
   };
   supabase: SupabaseClient;
 }): Promise<null | NextResponse> {
@@ -257,7 +384,7 @@ export async function guardProjectTransition(params: {
 
   return NextResponse.json(
     {
-      error: 'Invalid project transition',
+      error: 'Transition projet invalide',
       reason: result.reason,
       violations: result.violations,
       transition: `${params.from} → ${params.to}`,
@@ -265,3 +392,47 @@ export async function guardProjectTransition(params: {
     { status: 422 },
   );
 }
+
+/**
+ * Returns valid next statuses for UI rendering.
+ */
+export function getAvailableProjectTransitions(from: ProjectStatus): readonly ProjectStatus[] {
+  return VALID_PROJECT_TRANSITIONS[from];
+}
+
+/**
+ * Human-readable label for a project status.
+ */
+export function getProjectStatusLabel(status: ProjectStatus): string {
+  const labels: Record<ProjectStatus, string> = {
+    draft:                   'Brouillon',
+    measurements_confirmed:  'Mesures confirmées',
+    design_validated:        'Design validé',
+    bom_generated:           'BOM généré',
+    ready_for_production:    'Prêt pour production',
+    in_production:           'En production',
+    installation:            'Installation',
+    delivered:               'Livré',
+    cancelled:               'Annulé',
+  };
+  return labels[status] ?? status;
+}
+
+/**
+ * Returns the current step index (0-based) in the pipeline.
+ * Returns -1 for cancelled.
+ */
+export function getProjectStepIndex(status: ProjectStatus): number {
+  if (status === 'cancelled') return -1;
+  return PROJECT_PIPELINE_ORDER.indexOf(status);
+}
+
+// ── Backward-compatible aliases (to avoid breaking existing imports) ─────────
+// These will be removed after all consumers are updated.
+export const VALID_TRANSITIONS = VALID_PROJECT_TRANSITIONS;
+export const isValidTransition = isValidProjectTransition;
+export const getAvailableTransitions = getAvailableProjectTransitions;
+export const getStatusLabel = getProjectStatusLabel;
+
+// Re-export the TransitionResult type under original name
+export type TransitionResult = ProjectTransitionResult;

@@ -14,7 +14,8 @@ import { useLocale } from '@/lib/hooks/useLocale';
 import {
   ArrowLeft, Phone, MapPin, Mail, Calendar, User, DollarSign,
   FileText, Clock, CheckCircle, CreditCard, Ruler, Palette, Factory, Truck, Printer, Upload,
-  BarChart3, Box, MessageCircle, Package, LayoutGrid, Pencil, X
+  BarChart3, Box, MessageCircle, Package, LayoutGrid, Pencil, X,
+  Lock, AlertTriangle, ChevronRight, XCircle
 } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import ProjectMfgTabs from '@/components/projects/ProjectMfgTabs';
@@ -49,12 +50,34 @@ interface Quote {
 }
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
-  measurements: <Ruler size={16} />,
-  design: <Palette size={16} />,
-  client_validation: <CheckCircle size={16} />,
-  production: <Factory size={16} />,
+  draft: <FileText size={16} />,
+  measurements_confirmed: <Ruler size={16} />,
+  design_validated: <Palette size={16} />,
+  bom_generated: <Box size={16} />,
+  ready_for_production: <CheckCircle size={16} />,
+  in_production: <Factory size={16} />,
   installation: <Truck size={16} />,
-  completed: <CheckCircle size={16} />,
+  delivered: <CheckCircle size={16} />,
+  cancelled: <XCircle size={16} />,
+};
+
+// Map project statuses to their sequential order for the progress bar
+const STAGE_ORDER: ProjectStatus[] = [
+  'draft', 'measurements_confirmed', 'design_validated', 'bom_generated',
+  'ready_for_production', 'in_production', 'installation', 'delivered',
+];
+
+// Valid next transitions per status (matches FSM exactly)
+const VALID_NEXT: Record<ProjectStatus, ProjectStatus[]> = {
+  draft:                   ['measurements_confirmed'],
+  measurements_confirmed:  ['design_validated'],
+  design_validated:        ['bom_generated'],
+  bom_generated:           ['ready_for_production'],
+  ready_for_production:    ['in_production'],
+  in_production:           ['installation'],
+  installation:            ['delivered'],
+  delivered:               [],
+  cancelled:               [],
 };
 
 export default function ProjectDetailPage() {
@@ -73,6 +96,15 @@ export default function ProjectDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editForm, setEditForm] = useState({ client_name: '', client_phone: '', client_email: '', client_address: '', client_city: '', total_amount: '', priority: 'normal', notes: '' });
+
+  // Transition state
+  const [transitioning, setTransitioning] = useState(false);
+  const [transitionError, setTransitionError] = useState('');
+
+  // Cancel modal
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+
   useEffect(() => { loadAll(); }, [id]);
 
   async function loadAll() {
@@ -126,54 +158,57 @@ export default function ProjectDetailPage() {
     loadAll();
   }
 
-  async function updateStatus(newStatus: ProjectStatus) {
-    // Block production if deposit not paid
-    if (newStatus === 'production' && !project?.deposit_paid) {
-      alert('Cannot move to production: 50% deposit has not been paid. Please collect the deposit first.');
+  async function transitionTo(newStatus: ProjectStatus, opts?: { cancelled_reason?: string; notes?: string }) {
+    setTransitioning(true);
+    setTransitionError('');
+
+    try {
+      const res = await fetch(`/api/projects/${id}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: newStatus,
+          notes: opts?.notes,
+          cancelled_reason: opts?.cancelled_reason,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTransitionError(data.reason || data.message || data.error || 'Transition refusée');
+        setTransitioning(false);
+        return;
+      }
+      setTransitioning(false);
+      setShowCancelModal(false);
+      loadAll();
+    } catch {
+      setTransitionError('Erreur réseau');
+      setTransitioning(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!cancelReason.trim()) {
+      setTransitionError('Une raison d\'annulation est obligatoire.');
       return;
     }
-
-    // Production safety validation
-    if (newStatus === 'production') {
-      const validationErrors: string[] = [];
-
-      if (!project?.deposit_paid) validationErrors.push('50% deposit not paid');
-      if (!project?.design_validated) validationErrors.push('Design not validated');
-      if (project?.total_amount === 0) validationErrors.push('No quote amount set');
-
-      // Check if materials are available (any critical stock)
-      const { data: criticalStock } = await supabase
-        .from('stock_items')
-        .select('name')
-        .lte('current_quantity', 0)  // using column reference
-        .eq('is_active', true)
-        .limit(5);
-
-      if (criticalStock && criticalStock.length > 0) {
-        validationErrors.push(`${criticalStock.length} stock items at zero: ${criticalStock.map(s => s.name).join(', ')}`);
-      }
-
-      if (validationErrors.length > 0) {
-        const proceed = confirm(
-          `Production Safety Check - Issues found:\n\n${validationErrors.map(e => `- ${e}`).join('\n')}\n\nDo you want to proceed anyway? (CEO override)`
-        );
-        if (!proceed) return;
-        // Only CEO can override
-        if (profile?.role !== 'ceo') {
-          alert('Only CEO can override production safety validation. Please contact the CEO.');
-          return;
-        }
-      }
-    }
-
-    await supabase.from('projects').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
-    loadAll();
+    await transitionTo('cancelled', { cancelled_reason: cancelReason });
   }
 
   if (loading) return <div className="animate-pulse"><div className="h-96 bg-gray-200 rounded-xl" /></div>;
   if (!project) return <div className="text-center py-12 text-gray-500">{t('common.no_results')}</div>;
 
   const paymentPct = project.total_amount > 0 ? Math.round((project.paid_amount / project.total_amount) * 100) : 0;
+  const currentStageIdx = STAGE_ORDER.indexOf(project.status as ProjectStatus);
+  const isTerminal = project.status === 'delivered' || project.status === 'cancelled';
+  const nextStatuses = VALID_NEXT[project.status as ProjectStatus] || [];
+  const canManage = ['ceo', 'commercial_manager', 'workshop_manager', 'operations_manager'].includes(profile?.role || '');
+
+  // Get label for a status
+  function statusLabel(s: string): string {
+    const stage = PROJECT_STAGES.find(st => st.key === s);
+    return stage?.label || s;
+  }
 
   return (
     <RoleGuard allowedRoles={['ceo', 'commercial_manager', 'designer', 'workshop_manager'] as any[]}>
@@ -187,12 +222,155 @@ export default function ProjectDetailPage() {
           <h1 className="text-xl font-bold text-gray-900">{project.client_name}</h1>
         </div>
         <StatusBadge status={project.status} />
-        {['ceo', 'commercial_manager'].includes(profile?.role || '') && (
+        {['ceo', 'commercial_manager'].includes(profile?.role || '') && !isTerminal && (
           <button onClick={openEdit} className="p-2 hover:bg-gray-100 rounded-lg" title="Edit project">
             <Pencil size={18} className="text-gray-500" />
           </button>
         )}
       </div>
+
+      {/* ── Progress Bar ─────────────────────────────────────────────────── */}
+      <Card>
+        <CardContent>
+          {project.status === 'cancelled' ? (
+            <div className="flex items-center gap-3 text-red-600">
+              <XCircle size={20} />
+              <div>
+                <p className="font-semibold text-sm">Projet annulé</p>
+                {project.cancelled_reason && (
+                  <p className="text-xs text-red-500 mt-0.5">Raison: {project.cancelled_reason}</p>
+                )}
+                {project.cancelled_at && (
+                  <p className="text-xs text-red-400">
+                    Le {new Date(project.cancelled_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Progression du projet</span>
+                <span>{currentStageIdx + 1} / {STAGE_ORDER.length}</span>
+              </div>
+              {/* Stage dots */}
+              <div className="flex items-center gap-1">
+                {STAGE_ORDER.map((stage, idx) => {
+                  const isCurrent = idx === currentStageIdx;
+                  const isPast = idx < currentStageIdx;
+                  const stageInfo = PROJECT_STAGES.find(s => s.key === stage);
+                  return (
+                    <div key={stage} className="flex items-center flex-1">
+                      <div className="flex flex-col items-center flex-1 min-w-0">
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                            isCurrent
+                              ? 'bg-blue-600 text-white ring-4 ring-blue-100'
+                              : isPast
+                              ? 'bg-green-500 text-white'
+                              : 'bg-gray-200 text-gray-400'
+                          }`}
+                        >
+                          {isPast ? <CheckCircle size={14} /> : idx + 1}
+                        </div>
+                        <span className={`text-[10px] mt-1 text-center leading-tight truncate w-full ${
+                          isCurrent ? 'text-blue-700 font-semibold' : isPast ? 'text-green-600' : 'text-gray-400'
+                        }`}>
+                          {stageInfo?.label || stage}
+                        </span>
+                      </div>
+                      {idx < STAGE_ORDER.length - 1 && (
+                        <div className={`h-0.5 flex-1 mx-0.5 ${
+                          idx < currentStageIdx ? 'bg-green-400' : 'bg-gray-200'
+                        }`} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Progress bar */}
+              <div className="w-full h-2 bg-gray-100 rounded-full">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all"
+                  style={{ width: `${Math.round(((currentStageIdx + 1) / STAGE_ORDER.length) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Terminal Lock Banner ──────────────────────────────────────────── */}
+      {isTerminal && (
+        <div className={`rounded-2xl border-2 p-4 flex items-center gap-3 ${
+          project.status === 'delivered'
+            ? 'border-green-300 bg-green-50'
+            : 'border-red-300 bg-red-50'
+        }`}>
+          <Lock size={20} className={project.status === 'delivered' ? 'text-green-600' : 'text-red-600'} />
+          <div>
+            <p className={`font-semibold text-sm ${project.status === 'delivered' ? 'text-green-800' : 'text-red-800'}`}>
+              {project.status === 'delivered' ? 'Projet livré — verrouillé' : 'Projet annulé — verrouillé'}
+            </p>
+            <p className={`text-xs mt-0.5 ${project.status === 'delivered' ? 'text-green-600' : 'text-red-600'}`}>
+              Aucune modification de statut possible.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Transition Error ─────────────────────────────────────────────── */}
+      {transitionError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 flex items-start gap-2">
+          <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm text-red-700 font-medium">Transition refusée</p>
+            <p className="text-xs text-red-600 mt-0.5">{transitionError}</p>
+          </div>
+          <button onClick={() => setTransitionError('')} className="ml-auto">
+            <X size={16} className="text-red-400" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Next Step Action ─────────────────────────────────────────────── */}
+      {canManage && !isTerminal && nextStatuses.length > 0 && (
+        <Card>
+          <CardHeader>
+            <h2 className="font-semibold text-sm flex items-center gap-2">
+              <ChevronRight size={16} /> Prochaine étape
+            </h2>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {nextStatuses.map(ns => (
+                <Button
+                  key={ns}
+                  variant="primary"
+                  size="sm"
+                  loading={transitioning}
+                  onClick={() => transitionTo(ns)}
+                  className="flex items-center gap-2"
+                >
+                  {STATUS_ICONS[ns]} {statusLabel(ns)}
+                </Button>
+              ))}
+              {/* Cancel is always available for non-terminal states */}
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setCancelReason('');
+                  setTransitionError('');
+                  setShowCancelModal(true);
+                }}
+              >
+                <XCircle size={14} /> Annuler le projet
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Project Info */}
       <ProjectMfgTabs projectId={String(id)} />
@@ -294,22 +472,6 @@ export default function ProjectDetailPage() {
                   </div>
                   <span className="font-medium">{q.total_amount.toLocaleString()} MAD</span>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Status Pipeline */}
-      {['ceo', 'commercial_manager', 'workshop_manager'].includes(profile?.role || '') && (
-        <Card>
-          <CardHeader><h2 className="font-semibold text-sm">{t('projects.move_to')}</h2></CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {PROJECT_STAGES.filter(s => s.key !== project.status).map(stage => (
-                <Button key={stage.key} variant="secondary" size="sm" onClick={() => updateStatus(stage.key as ProjectStatus)}>
-                  {STATUS_ICONS[stage.key]} {stage.label}
-                </Button>
               ))}
             </div>
           </CardContent>
@@ -475,6 +637,58 @@ export default function ProjectDetailPage() {
                   {editSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Project Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-red-700 flex items-center gap-2">
+                <XCircle size={18} /> Annuler le projet
+              </h2>
+              <button onClick={() => setShowCancelModal(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-3 flex items-start gap-2">
+              <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-red-700">
+                Cette action est <strong>irréversible</strong>. Le projet sera définitivement verrouillé.
+              </p>
+            </div>
+
+            {transitionError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-sm text-red-700">
+                {transitionError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Raison de l&apos;annulation *</label>
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                placeholder="Expliquez pourquoi ce projet est annulé..."
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowCancelModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600">
+                Retour
+              </button>
+              <button
+                onClick={handleCancel}
+                disabled={transitioning || !cancelReason.trim()}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors"
+              >
+                {transitioning ? 'Annulation...' : 'Confirmer l\'annulation'}
+              </button>
             </div>
           </div>
         </div>

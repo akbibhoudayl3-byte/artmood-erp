@@ -3,48 +3,49 @@
  *
  * POST /api/projects/[id]/transition
  *
- * Validates and applies a project status transition through the FSM.
- * All pre-conditions must pass before the status is updated.
- *
- * Allowed roles: CEO, commercial_manager, workshop_manager, designer
- * (further restricted per-transition inside the handler)
+ * Validates and applies a project status transition through the strict FSM.
+ * NO backward transitions. NO skipping steps. All pre-conditions must pass.
  *
  * Request body:
- *   { status: ProjectStatus, notes?: string }
+ *   { status: ProjectStatus, notes?: string, cancelled_reason?: string }
  *
  * Response (success):
- *   { ok: true, project: { id, status, ... }, from: oldStatus, to: newStatus }
+ *   { ok: true, project: {...}, from, to }
  *
  * Response (validation failure):
- *   { error: 'Invalid project transition', reason: string, violations: string[] }
+ *   { error: 'Transition projet invalide', reason: string, violations: string[] }
  */
 
-import { NextResponse }                from 'next/server';
-import { guard }                       from '@/lib/security/guardian';
-import { guardProjectTransition }      from '@/lib/integrity/project-fsm';
+import { NextResponse } from 'next/server';
+import { guard } from '@/lib/security/guardian';
+import { guardProjectTransition } from '@/lib/integrity/project-fsm';
 import { isValidUUID, sanitizeString } from '@/lib/auth/server';
 import type { ProjectStatus, UserRole } from '@/types/database';
 
 // ── Per-transition role restrictions ──────────────────────────────────────────
-// Some transitions require specific roles beyond the base guard.
 const TRANSITION_ROLES: Partial<Record<ProjectStatus, readonly UserRole[]>> = {
-  production:   ['ceo', 'workshop_manager', 'commercial_manager'],
-  installation: ['ceo', 'workshop_manager'],
-  delivered:    ['ceo', 'commercial_manager'],
-  cancelled:    ['ceo', 'commercial_manager'],
+  in_production:        ['ceo', 'workshop_manager', 'commercial_manager'],
+  installation:         ['ceo', 'workshop_manager'],
+  delivered:            ['ceo', 'commercial_manager'],
+  cancelled:            ['ceo', 'commercial_manager'],
 };
+
+// ── Valid status values set (for input validation) ────────────────────────────
+const VALID_STATUSES: readonly ProjectStatus[] = [
+  'draft', 'measurements_confirmed', 'design_validated', 'bom_generated',
+  'ready_for_production', 'in_production', 'installation', 'delivered', 'cancelled',
+] as const;
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  // ── Guard: roles that can ever touch project transitions ─────────────────
-  const ctx = await guard(['ceo', 'commercial_manager', 'workshop_manager', 'designer']);
+  // ── Guard: roles that can touch project transitions ─────────────────────
+  const ctx = await guard(['ceo', 'commercial_manager', 'workshop_manager', 'designer', 'operations_manager']);
   if (ctx instanceof NextResponse) return ctx;
 
   const { id: projectId } = await params;
 
-  // ── Validate project UUID ─────────────────────────────────────────────────
   if (!isValidUUID(projectId)) {
     return NextResponse.json(
       { error: 'Invalid project ID', message: 'Project ID must be a valid UUID' },
@@ -52,8 +53,8 @@ export async function POST(
     );
   }
 
-  // ── Parse request body ────────────────────────────────────────────────────
-  let body: { status?: string; notes?: string };
+  // ── Parse request body ──────────────────────────────────────────────────
+  let body: { status?: string; notes?: string; cancelled_reason?: string };
   try {
     body = await request.json();
   } catch {
@@ -62,18 +63,22 @@ export async function POST(
 
   const toStatus = body?.status as ProjectStatus | undefined;
   const notes = sanitizeString(body?.notes ?? '', 500);
+  const cancelledReason = sanitizeString(body?.cancelled_reason ?? '', 500);
 
-  if (!toStatus) {
+  if (!toStatus || !VALID_STATUSES.includes(toStatus)) {
     return NextResponse.json(
-      { error: 'Missing status', message: '"status" field is required in request body' },
+      {
+        error: 'Statut invalide',
+        message: `"status" doit être l'un de: ${VALID_STATUSES.join(', ')}`,
+      },
       { status: 400 },
     );
   }
 
-  // ── Fetch current project ─────────────────────────────────────────────────
+  // ── Fetch current project ────────────────────────────────────────────────
   const { data: project, error: fetchErr } = await ctx.supabase
     .from('projects')
-    .select('id, status, client_name, deposit_paid, design_validated, total_amount')
+    .select('id, status, client_name, reference_code, deposit_paid, design_validated, total_amount, measurement_date, measured_by, lead_id')
     .eq('id', projectId)
     .single();
 
@@ -89,12 +94,12 @@ export async function POST(
   // Same status — no-op
   if (fromStatus === toStatus) {
     return NextResponse.json(
-      { error: 'No change', message: `Project is already in "${toStatus}" status` },
+      { error: 'Pas de changement', message: `Le projet est déjà en statut "${toStatus}"` },
       { status: 409 },
     );
   }
 
-  // ── WORKFLOW RULE: Delivered and cancelled projects are LOCKED ────────────
+  // ── TERMINAL STATES: Delivered and cancelled are LOCKED ─────────────────
   if (fromStatus === 'delivered') {
     return NextResponse.json(
       {
@@ -114,65 +119,108 @@ export async function POST(
     );
   }
 
-  // ── Per-transition role check ─────────────────────────────────────────────
+  // ── Per-transition role check ───────────────────────────────────────────
   const requiredRoles = TRANSITION_ROLES[toStatus];
   if (requiredRoles && !requiredRoles.includes(ctx.role)) {
     return NextResponse.json(
       {
-        error: 'Forbidden',
-        message: `Transitioning to "${toStatus}" requires one of: ${requiredRoles.join(', ')}. Your role: ${ctx.role}`,
+        error: 'Accès refusé',
+        message: `La transition vers "${toStatus}" nécessite l'un des rôles: ${requiredRoles.join(', ')}. Votre rôle: ${ctx.role}`,
       },
       { status: 403 },
     );
   }
 
-  // ── FSM Validation (includes async pre-conditions) ────────────────────────
+  // ── Cancellation requires a reason ──────────────────────────────────────
+  if (toStatus === 'cancelled' && !cancelledReason) {
+    return NextResponse.json(
+      {
+        error: 'Raison obligatoire',
+        message: 'Une raison d\'annulation est obligatoire pour annuler un projet.',
+      },
+      { status: 400 },
+    );
+  }
+
+  // ── FSM Validation (includes sync + async pre-conditions) ───────────────
   const fsm = await guardProjectTransition({
-    from:      fromStatus,
-    to:        toStatus,
+    from: fromStatus,
+    to: toStatus,
     projectId,
     project,
-    supabase:  ctx.supabase,
+    supabase: ctx.supabase,
   });
-  if (fsm !== null) return fsm; // returns 422 NextResponse with violation list
+  if (fsm !== null) return fsm;
 
-  // ── Apply the transition ──────────────────────────────────────────────────
+  // ── Build update payload ────────────────────────────────────────────────
+  const now = new Date().toISOString();
+  const updatePayload: Record<string, unknown> = {
+    status: toStatus,
+    status_updated_at: now,
+    updated_at: now,
+  };
+
+  // Set lifecycle timestamps
+  if (toStatus === 'design_validated') {
+    updatePayload.design_validated_at = now;
+  }
+  if (toStatus === 'bom_generated') {
+    updatePayload.bom_generated_at = now;
+  }
+  if (toStatus === 'in_production') {
+    updatePayload.production_started_at = now;
+    updatePayload.estimated_production_start = now.split('T')[0];
+  }
+  if (toStatus === 'delivered') {
+    updatePayload.delivered_at = now;
+    updatePayload.actual_delivery_date = now.split('T')[0];
+  }
+  if (toStatus === 'cancelled') {
+    updatePayload.cancelled_at = now;
+    updatePayload.cancelled_reason = cancelledReason;
+  }
+
+  // ── Apply the transition ────────────────────────────────────────────────
   const { data: updated, error: updateErr } = await ctx.supabase
     .from('projects')
-    .update({
-      status:     toStatus,
-      updated_at: new Date().toISOString(),
-      // Set actual_delivery_date when project is delivered
-      ...(toStatus === 'delivered' ? { actual_delivery_date: new Date().toISOString().split('T')[0] } : {}),
-    })
+    .update(updatePayload)
     .eq('id', projectId)
-    .select('id, status, client_name, reference_code, updated_at')
+    .select('id, status, client_name, reference_code, status_updated_at, updated_at')
     .single();
 
   if (updateErr || !updated) {
-    console.error('[transition] Update failed:', updateErr?.message);
+    console.error('[project-transition] Update failed:', updateErr?.message);
     return NextResponse.json(
-      { error: 'Transition failed', message: updateErr?.message ?? 'Database error' },
+      { error: 'Transition échouée', message: updateErr?.message ?? 'Erreur base de données' },
       { status: 500 },
     );
   }
 
-  // ── Audit log ─────────────────────────────────────────────────────────────
-  // (DB trigger log_project_status_change also fires — this is belt-and-suspenders)
+  // ── Log project event ───────────────────────────────────────────────────
+  await ctx.supabase.from('project_events').insert({
+    project_id: projectId,
+    user_id: ctx.userId,
+    event_type: 'status_change',
+    old_value: fromStatus,
+    new_value: toStatus,
+    description: `Statut changé: ${fromStatus} → ${toStatus}${notes ? `. ${notes}` : ''}`,
+  });
+
+  // ── Audit log ───────────────────────────────────────────────────────────
   await ctx.audit({
-    action:      'status_change',
+    action: 'project_status_changed',
     entity_type: 'project',
-    entity_id:   projectId,
-    old_value:   { status: fromStatus },
-    new_value:   { status: toStatus },
-    notes:       `Project transition: ${fromStatus} → ${toStatus}${notes ? `. Notes: ${notes}` : ''}`,
+    entity_id: projectId,
+    old_value: { status: fromStatus },
+    new_value: { status: toStatus, ...(cancelledReason ? { cancelled_reason: cancelledReason } : {}) },
+    notes: `Project "${project.client_name}" (${project.reference_code}): ${fromStatus} → ${toStatus}${notes ? `. ${notes}` : ''}`,
   });
 
   return NextResponse.json({
-    ok:      true,
+    ok: true,
     project: updated,
-    from:    fromStatus,
-    to:      toStatus,
-    message: `Project "${project.client_name}" transitioned from "${fromStatus}" to "${toStatus}"`,
+    from: fromStatus,
+    to: toStatus,
+    message: `Projet "${project.client_name}" : ${fromStatus} → ${toStatus}`,
   });
 }
