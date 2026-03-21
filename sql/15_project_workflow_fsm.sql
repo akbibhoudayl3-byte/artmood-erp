@@ -7,20 +7,24 @@
 --
 -- Also adds: cancelled (terminal, reachable from any non-terminal state)
 --
--- DATA MIGRATION:
---   measurements      → draft
---   design            → draft  (pre-measurements_confirmed)
---   client_validation → design_validated
---   production        → in_production
---   (installation, delivered, cancelled remain as-is)
+-- SAFETY: No project loses progression. All mappings preserve or advance state.
+--
+-- DATA MIGRATION (preserves real project progress — NEVER downgrade):
+--   measurements      → measurements_confirmed  (measurements were taken)
+--   design            → design_validated         (design work was done)
+--   client_validation → design_validated         (client approved design)
+--   production        → in_production            (direct equivalent)
+--   installation      → installation             (no change)
+--   delivered         → delivered                (no change)
+--   cancelled         → cancelled                (no change)
 -- ============================================================
 
 -- 1. Drop the old CHECK constraint
 ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check;
 
--- 2. Migrate existing data to new status values
-UPDATE projects SET status = 'draft' WHERE status = 'measurements';
-UPDATE projects SET status = 'draft' WHERE status = 'design';
+-- 2. Migrate existing data to new status values (NEVER downgrade progress)
+UPDATE projects SET status = 'measurements_confirmed' WHERE status = 'measurements';
+UPDATE projects SET status = 'design_validated' WHERE status = 'design';
 UPDATE projects SET status = 'design_validated' WHERE status = 'client_validation';
 UPDATE projects SET status = 'in_production' WHERE status = 'production';
 
