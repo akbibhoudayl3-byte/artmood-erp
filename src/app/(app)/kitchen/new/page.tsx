@@ -727,7 +727,7 @@ export default function KitchenPipelinePage() {
         </Card>
       )}
 
-      {/* ── STEP 6: Auto Detection + Filler Confirmation ── */}
+      {/* ── STEP 6: Validation ── */}
       {step === 6 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
@@ -738,46 +738,116 @@ export default function KitchenPipelinePage() {
               </div>
               <button onClick={() => setStep(5)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
             </div>
+
             {!detectionDone ? (
               <Button onClick={runDetection} loading={loading} fullWidth size="lg" variant="accent">
-                Lancer la détection <CheckCircle className="w-4 h-4" />
+                Vérifier ma cuisine <CheckCircle className="w-4 h-4" />
               </Button>
             ) : (
               <>
-                {/* Filler status */}
-                <div className={`p-3 rounded-xl text-sm font-medium text-center ${
-                  fillerSuggestions.some(f => f.suggestion === 'overflow') ? 'bg-red-50 text-red-700' :
-                  fillerSuggestions.some(f => f.suggestion === 'filler_needed') ? 'bg-amber-50 text-amber-700' :
-                  'bg-emerald-50 text-emerald-700'
-                }`}>
-                  {fillerSuggestions.some(f => f.suggestion === 'overflow') ? 'Ajustements nécessaires' :
-                   fillerSuggestions.some(f => f.suggestion === 'filler_needed') ? 'Ajustements nécessaires' :
-                   'Votre cuisine est optimisée'}
+                {/* ── Status banner ── */}
+                {(() => {
+                  const hasRed = fillerSuggestions.some(f => f.suggestion === 'overflow');
+                  const hasWarning = fillerSuggestions.some(f => f.suggestion === 'filler_needed' || f.suggestion === 'add_module');
+                  const isOk = !hasRed && !hasWarning;
+                  return (
+                    <div className={`p-4 rounded-xl text-center ${
+                      hasRed ? 'bg-red-50 border border-red-200' :
+                      hasWarning ? 'bg-amber-50 border border-amber-200' :
+                      'bg-emerald-50 border border-emerald-200'
+                    }`}>
+                      <span className="text-lg">{isOk ? 'Cuisine validée \u2705' : 'Corrections nécessaires \u26A0\uFE0F'}</span>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Remaining space per wall ── */}
+                <div className="bg-[#FAFAF8] rounded-xl p-3 space-y-2">
+                  <span className="text-xs font-semibold text-[#64648B] uppercase tracking-wide">Espace par mur</span>
+                  {fillerSuggestions.map((f, i) => {
+                    const diff = f.gap_mm;
+                    return (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-[#1a1a2e]">Mur {f.wall_name}</span>
+                        <span className={`font-semibold ${
+                          diff < 0 ? 'text-red-600' : diff === 0 ? 'text-emerald-600' : 'text-amber-600'
+                        }`}>
+                          {diff === 0 ? '0mm — parfait' : diff > 0 ? `+${diff}mm libre` : `${diff}mm dépassement`}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {pendingFillers.length > 0 && (
-                  <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-3">
-                    {pendingFillers.map((f, i) => (
-                      <div key={i} className="flex items-center gap-3">
-                        <span className="text-sm text-amber-700 flex-1">
-                          Mur {f.wall_name}: {f.gap_mm}mm
-                        </span>
-                        <select value={f.side}
-                          onChange={e => setPendingFillers(prev => prev.map((ff, ii) =>
-                            ii === i ? { ...ff, side: e.target.value as 'left' | 'right' } : ff
-                          ))}
-                          className="px-2 py-1 border border-amber-300 rounded-lg text-xs bg-white">
-                          <option value="right">Droite</option>
-                          <option value="left">Gauche</option>
-                        </select>
-                      </div>
-                    ))}
+                {/* ── Issues list ── */}
+                {fillerSuggestions.some(f => f.suggestion !== 'ok') && (
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold text-[#64648B] uppercase tracking-wide">À corriger</span>
+                    {fillerSuggestions
+                      .filter(f => f.suggestion !== 'ok')
+                      .map((f, i) => (
+                        <div key={i} className={`flex items-start gap-2 p-2.5 rounded-lg text-sm ${
+                          f.suggestion === 'overflow' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          {f.suggestion === 'overflow'
+                            ? <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            : <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+                          <span>
+                            Mur {f.wall_name}: {
+                              f.suggestion === 'overflow' ? `dépassement de ${Math.abs(f.gap_mm)}mm → réduire un meuble` :
+                              f.suggestion === 'filler_needed' ? `manque ${f.gap_mm}mm → ajouter joint` :
+                              f.suggestion === 'add_module' ? `${f.gap_mm}mm libre → ajouter un meuble` :
+                              f.suggestion === 'too_small' ? `espace trop petit (${f.gap_mm}mm)` :
+                              f.message
+                            }
+                          </span>
+                        </div>
+                      ))}
                   </div>
                 )}
 
-                <Button onClick={confirmFillers} loading={loading} fullWidth size="lg">
-                  {pendingFillers.length > 0 ? 'Confirmer les fillers' : 'Continuer'} <ArrowRight className="w-4 h-4" />
+                {/* ── Filler suggestions ── */}
+                {pendingFillers.length > 0 && (
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold text-[#64648B] uppercase tracking-wide">Joints proposés</span>
+                    <div className="border border-[#E8E5E0] rounded-xl divide-y divide-[#E8E5E0]">
+                      {pendingFillers.map((f, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3">
+                          <div className="flex-1">
+                            <span className="text-sm font-medium text-[#1a1a2e]">
+                              Mur {f.wall_name}
+                            </span>
+                            <span className="text-sm text-[#64648B] ml-1">
+                              — ajouter joint {f.gap_mm}mm
+                            </span>
+                          </div>
+                          <select value={f.side}
+                            onChange={e => setPendingFillers(prev => prev.map((ff, ii) =>
+                              ii === i ? { ...ff, side: e.target.value as 'left' | 'right' } : ff
+                            ))}
+                            className="px-2.5 py-1.5 border border-[#E2E0DC] rounded-lg text-xs bg-white">
+                            <option value="right">Droite</option>
+                            <option value="left">Gauche</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Action button ── */}
+                <Button
+                  onClick={confirmFillers}
+                  loading={loading}
+                  fullWidth
+                  size="lg"
+                  disabled={fillerSuggestions.some(f => f.suggestion === 'overflow')}
+                >
+                  Continuer <ArrowRight className="w-4 h-4" />
                 </Button>
+                {fillerSuggestions.some(f => f.suggestion === 'overflow') && (
+                  <p className="text-xs text-red-500 text-center">Corrigez les dépassements avant de continuer</p>
+                )}
               </>
             )}
           </CardContent>
