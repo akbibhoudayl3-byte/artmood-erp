@@ -796,10 +796,10 @@ export default function KitchenPipelinePage() {
                           }`}>
                             <ArrowRight className="w-3 h-3 flex-shrink-0" />
                             <span>
-                              {f.suggestion === 'overflow' ? `${Math.abs(f.gap_mm)}mm en trop — ajuster un meuble` :
-                               f.suggestion === 'filler_needed' ? `joint de ${f.gap_mm}mm recommandé` :
-                               f.suggestion === 'add_module' ? `place pour un meuble de ${f.gap_mm}mm` :
-                               f.suggestion === 'too_small' ? `petit espace (${f.gap_mm}mm) — joint possible` :
+                              {f.suggestion === 'overflow' ? `Réduire un meuble de ${Math.abs(f.gap_mm)}mm` :
+                               f.suggestion === 'filler_needed' ? `Ajouter joint de ${f.gap_mm}mm` :
+                               f.suggestion === 'add_module' ? `Ajouter meuble de ${f.gap_mm}mm` :
+                               f.suggestion === 'too_small' ? `Ajouter joint de ${f.gap_mm}mm` :
                                f.message}
                             </span>
                           </div>
