@@ -955,6 +955,7 @@ export default function KitchenPipelinePage() {
                 {/* 6. CTA */}
                 <p className="text-center text-xs text-[#64648B]">Production lancée dès validation</p>
                 <p className="text-center text-xs text-[#64648B] italic">Places limitées en production cette semaine</p>
+                <p className="text-center text-xs text-[#64648B]">Vous confirmez votre cuisine telle que configurée</p>
                 <Button onClick={async () => { await runValidation(); }} loading={loading} fullWidth size="lg" variant="accent">
                   Lancer ma cuisine maintenant <ArrowRight className="w-4 h-4" />
                 </Button>
