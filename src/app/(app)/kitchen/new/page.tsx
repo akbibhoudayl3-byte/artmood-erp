@@ -560,8 +560,8 @@ export default function KitchenPipelinePage() {
           <CardContent className="space-y-4 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Modules</h2>
-                <p className="text-xs text-[#64648B]">Ajoutez ou ajustez les modules</p>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Choix cuisine</h2>
+                <p className="text-xs text-[#64648B]">Composez votre cuisine</p>
               </div>
               <button onClick={() => setStep(2)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
             </div>
@@ -633,8 +633,8 @@ export default function KitchenPipelinePage() {
           <CardContent className="space-y-4 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Options</h2>
-                <p className="text-xs text-[#64648B]">Choisissez ouverture et matériaux</p>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Style</h2>
+                <p className="text-xs text-[#64648B]">Choisissez ouverture et finitions</p>
               </div>
               <button onClick={() => setStep(3)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
             </div>
@@ -691,8 +691,8 @@ export default function KitchenPipelinePage() {
           <CardContent className="space-y-3 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Façades</h2>
-                <p className="text-xs text-[#64648B]">Personnalisez chaque façade</p>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Portes</h2>
+                <p className="text-xs text-[#64648B]">Personnalisez chaque porte</p>
               </div>
               <button onClick={() => setStep(4)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
             </div>
@@ -733,8 +733,8 @@ export default function KitchenPipelinePage() {
           <CardContent className="space-y-4 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Vérification</h2>
-                <p className="text-xs text-[#64648B]">Détection automatique des ajustements</p>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Validation</h2>
+                <p className="text-xs text-[#64648B]">On vérifie tout pour vous</p>
               </div>
               <button onClick={() => setStep(5)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
             </div>
@@ -790,7 +790,7 @@ export default function KitchenPipelinePage() {
           <CardContent className="space-y-4 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Tarification</h2>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Prix</h2>
                 <p className="text-xs text-[#64648B]">Calcul automatique du prix</p>
               </div>
               <button onClick={() => setStep(6)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
@@ -808,7 +808,7 @@ export default function KitchenPipelinePage() {
           <CardContent className="space-y-4 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Résumé</h2>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Récap</h2>
                 <p className="text-xs text-[#64648B]">Vérifiez les coûts détaillés</p>
               </div>
               <button onClick={() => setStep(7)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
@@ -858,8 +858,8 @@ export default function KitchenPipelinePage() {
           <CardContent className="space-y-4 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Finalisation</h2>
-                <p className="text-xs text-[#64648B]">Sauvegardez ou validez le projet</p>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Valider</h2>
+                <p className="text-xs text-[#64648B]">Confirmez votre cuisine</p>
               </div>
               <button onClick={() => setStep(8)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
             </div>
