@@ -870,12 +870,22 @@ export default function KitchenPipelinePage() {
 
             return (
               <>
-                {/* Transition */}
+                {/* 1. Transition */}
                 <div className="text-center py-2">
                   <p className="text-sm font-medium text-emerald-600">Votre cuisine est prête à être fabriquée</p>
                 </div>
 
-                {/* Hero price */}
+                {/* 2. Confirmation */}
+                <p className="text-center text-sm text-emerald-600 font-medium">Aucune modification nécessaire</p>
+
+                {/* 3. Reassurance */}
+                <div className="flex items-center justify-center gap-4 text-xs text-[#64648B]">
+                  <span>Garantie 24 mois</span>
+                  <span className="w-px h-3 bg-[#E8E5E0]" />
+                  <span>Délai moyen : 10 à 15 jours</span>
+                </div>
+
+                {/* 4. Price block — Hero price */}
                 <Card>
                   <CardContent className="pt-8 pb-6 text-center">
                     <p className="text-xs uppercase tracking-widest text-[#64648B] mb-3">Votre cuisine sur mesure</p>
@@ -939,20 +949,10 @@ export default function KitchenPipelinePage() {
                   </CardContent>
                 </Card>
 
-                {/* Confirmation */}
-                <p className="text-center text-sm text-emerald-600 font-medium">Aucune modification nécessaire</p>
-
-                {/* Reassurance */}
-                <div className="flex items-center justify-center gap-4 text-xs text-[#64648B]">
-                  <span>Garantie 24 mois</span>
-                  <span className="w-px h-3 bg-[#E8E5E0]" />
-                  <span>Délai moyen : 10 à 15 jours</span>
-                </div>
-
-                {/* Final push */}
+                {/* 5. Final push */}
                 <p className="text-center text-xs font-semibold uppercase tracking-widest text-[#1a1a2e]">Dernière étape avant lancement</p>
 
-                {/* CTA */}
+                {/* 6. CTA */}
                 <Button onClick={async () => { await runValidation(); }} loading={loading} fullWidth size="lg" variant="accent">
                   Valider et lancer la fabrication <ArrowRight className="w-4 h-4" />
                 </Button>
