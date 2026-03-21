@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import Card, { CardHeader, CardContent } from '@/components/ui/Card';
+import Card, { CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input, { Select, Textarea } from '@/components/ui/Input';
 import { formatMAD, roundMoney } from '@/lib/utils/money';
@@ -446,22 +446,21 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 1: Projet ── */}
       {step === 1 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Informations Projet</h2></CardHeader>
-          <CardContent className="space-y-4">
-            <Input label="Nom du client *" value={kitchen.client_name ?? ''} placeholder="Ex: Mme Amrani"
+          <CardContent className="space-y-4 pt-5">
+            <Input label="Client" value={kitchen.client_name ?? ''} placeholder="Mme Amrani"
               onChange={e => setKitchen(p => ({ ...p, client_name: e.target.value }))} />
 
             <div className="grid grid-cols-2 gap-3">
-              <Select label="Type client" value={kitchen.client_type ?? 'standard'}
+              <Select label="Profil" value={kitchen.client_type ?? 'standard'}
                 onChange={e => setKitchen(p => ({ ...p, client_type: e.target.value as ClientType }))}
                 options={[
-                  { value: 'standard', label: 'Standard (50%)' },
-                  { value: 'promoteur', label: 'Promoteur (30%)' },
-                  { value: 'revendeur', label: 'Revendeur (30%)' },
-                  { value: 'architecte', label: 'Architecte (40%)' },
-                  { value: 'urgent', label: 'Urgent (70%)' },
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'promoteur', label: 'Promoteur' },
+                  { value: 'revendeur', label: 'Revendeur' },
+                  { value: 'architecte', label: 'Architecte' },
+                  { value: 'urgent', label: 'Urgent' },
                 ]} />
-              <Select label="Type cuisine" value={kitchen.kitchen_type ?? 'modern'}
+              <Select label="Style" value={kitchen.kitchen_type ?? 'modern'}
                 onChange={e => setKitchen(p => ({ ...p, kitchen_type: e.target.value }))}
                 options={[
                   { value: 'modern', label: 'Moderne' },
@@ -470,14 +469,12 @@ export default function KitchenPipelinePage() {
                 ]} />
             </div>
 
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={kitchen.full_height ?? false}
-                  onChange={e => setKitchen(p => ({ ...p, full_height: e.target.checked }))}
-                  className="w-4 h-4 rounded border-[#E2E0DC] text-[#C9956B] focus:ring-[#C9956B]" />
-                <span className="text-sm text-[#4A4A6A]">Pleine hauteur</span>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={kitchen.full_height ?? false}
+                onChange={e => setKitchen(p => ({ ...p, full_height: e.target.checked }))}
+                className="w-4 h-4 rounded border-[#E2E0DC] text-[#C9956B] focus:ring-[#C9956B]" />
+              <span className="text-sm text-[#4A4A6A]">Pleine hauteur</span>
+            </label>
 
             <Button onClick={saveProject} loading={loading} fullWidth size="lg">
               Continuer <ArrowRight className="w-4 h-4" />
@@ -489,34 +486,57 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 2: Layout ── */}
       {step === 2 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Plan & Murs</h2></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
-              {(['I', 'L', 'U'] as LayoutType[]).map(layout => (
-                <button key={layout} onClick={() => setKitchen(p => ({ ...p, layout_type: layout }))}
-                  className={`py-4 rounded-xl border-2 text-center font-bold text-2xl transition-all ${
-                    kitchen.layout_type === layout
-                      ? 'border-[#C9956B] bg-[#C9956B]/5 text-[#C9956B]'
-                      : 'border-[#E8E5E0] text-[#64648B] hover:border-[#C9956B]/30'
-                  }`}>
-                  {layout}
-                </button>
-              ))}
+          <CardContent className="space-y-4 pt-5">
+            {/* Visual layout blocks */}
+            <div className="grid grid-cols-3 gap-3">
+              {(['I', 'L', 'U'] as LayoutType[]).map(layout => {
+                const selected = kitchen.layout_type === layout;
+                return (
+                  <button key={layout} onClick={() => setKitchen(p => ({ ...p, layout_type: layout }))}
+                    className={`relative py-5 rounded-xl border-2 transition-all ${
+                      selected
+                        ? 'border-[#C9956B] bg-[#C9956B]/5'
+                        : 'border-[#E8E5E0] hover:border-[#C9956B]/30'
+                    }`}>
+                    {/* Kitchen shape visual */}
+                    <div className="flex items-end justify-center h-10 mb-2">
+                      {layout === 'I' && (
+                        <div className={`w-16 h-3 rounded-sm ${selected ? 'bg-[#C9956B]' : 'bg-[#D1CFC9]'}`} />
+                      )}
+                      {layout === 'L' && (
+                        <div className="relative w-12 h-10">
+                          <div className={`absolute bottom-0 left-0 w-full h-3 rounded-sm ${selected ? 'bg-[#C9956B]' : 'bg-[#D1CFC9]'}`} />
+                          <div className={`absolute bottom-0 left-0 w-3 h-full rounded-sm ${selected ? 'bg-[#C9956B]' : 'bg-[#D1CFC9]'}`} />
+                        </div>
+                      )}
+                      {layout === 'U' && (
+                        <div className="relative w-12 h-10">
+                          <div className={`absolute bottom-0 left-0 w-full h-3 rounded-sm ${selected ? 'bg-[#C9956B]' : 'bg-[#D1CFC9]'}`} />
+                          <div className={`absolute bottom-0 left-0 w-3 h-full rounded-sm ${selected ? 'bg-[#C9956B]' : 'bg-[#D1CFC9]'}`} />
+                          <div className={`absolute bottom-0 right-0 w-3 h-full rounded-sm ${selected ? 'bg-[#C9956B]' : 'bg-[#D1CFC9]'}`} />
+                        </div>
+                      )}
+                    </div>
+                    <span className={`text-sm font-semibold ${selected ? 'text-[#C9956B]' : 'text-[#64648B]'}`}>
+                      {layout === 'I' ? 'Linéaire' : layout === 'L' ? 'Angle' : 'U'}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="space-y-3">
-              {wallInputs.map((w, i) => (
-                <Input key={i} label={`Mur ${w.wall_name} — Longueur (mm)`} type="number"
-                  value={w.wall_length_mm}
-                  onChange={e => {
-                    const val = parseInt(e.target.value) || 0;
-                    setWallInputs(prev => prev.map((ww, ii) => ii === i ? { ...ww, wall_length_mm: val } : ww));
-                  }} />
-              ))}
-            </div>
+            {/* Wall dimensions */}
+            {wallInputs.map((w, i) => (
+              <Input key={i} label={`Mur ${w.wall_name} (mm)`} type="number"
+                value={w.wall_length_mm}
+                onChange={e => {
+                  const val = parseInt(e.target.value) || 0;
+                  setWallInputs(prev => prev.map((ww, ii) => ii === i ? { ...ww, wall_length_mm: val } : ww));
+                }} />
+            ))}
 
             <Button onClick={saveWalls} loading={loading} fullWidth size="lg">
-              Générer les modules <ArrowRight className="w-4 h-4" />
+              Continuer <ArrowRight className="w-4 h-4" />
             </Button>
           </CardContent>
         </Card>
@@ -525,13 +545,7 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 3: Modules ── */}
       {step === 3 && (
         <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-[#1a1a2e]">Modules</h2>
-              <span className="text-xs text-[#64648B]">{placedModules.length} module(s)</span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-5">
             {walls.map(wall => {
               const wallMods = placedModules.filter(m => m.wall_id === wall.id);
               const totalW = wallMods.reduce((s, m) => s + m.width_mm, 0);
@@ -597,8 +611,7 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 4: Options Globales ── */}
       {step === 4 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Options Globales</h2></CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-5">
             <div className="grid grid-cols-3 gap-2">
               {(['handles', 'gola', 'push'] as OpeningSystem[]).map(os => (
                 <button key={os} onClick={() => setKitchen(p => ({ ...p, opening_system: os }))}
@@ -649,9 +662,7 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 5: Customization par module ── */}
       {step === 5 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Personnalisation par Module</h2></CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-[#64648B]">Optionnel: changer la façade de modules individuels</p>
+          <CardContent className="space-y-3 pt-5">
 
             {savedModules.map((m, i) => {
               const mod = availableModules.find(am => am.id === m.module_id);
@@ -686,55 +697,26 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 6: Auto Detection + Filler Confirmation ── */}
       {step === 6 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Détection Automatique</h2></CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-5">
             {!detectionDone ? (
-              <>
-                <p className="text-sm text-[#64648B]">Le système détecte automatiquement les fillers, le système spider, et les panneaux aluminium évier.</p>
-                <Button onClick={runDetection} loading={loading} fullWidth size="lg" variant="accent">
-                  Lancer la détection <CheckCircle className="w-4 h-4" />
-                </Button>
-              </>
+              <Button onClick={runDetection} loading={loading} fullWidth size="lg" variant="accent">
+                Lancer la détection <CheckCircle className="w-4 h-4" />
+              </Button>
             ) : (
               <>
-                {/* Detection Results */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-[#1a1a2e]">Résultats</h3>
-                  {fillerSuggestions.map((f, i) => (
-                    <div key={i} className={`flex items-center gap-2 p-2.5 rounded-lg text-sm ${
-                      f.suggestion === 'ok' ? 'bg-emerald-50 text-emerald-700' :
-                      f.suggestion === 'overflow' ? 'bg-red-50 text-red-700' :
-                      'bg-amber-50 text-amber-700'
-                    }`}>
-                      {f.suggestion === 'ok' ? <CheckCircle className="w-4 h-4 flex-shrink-0" /> :
-                       f.suggestion === 'overflow' ? <AlertCircle className="w-4 h-4 flex-shrink-0" /> :
-                       <AlertTriangle className="w-4 h-4 flex-shrink-0" />}
-                      <span>{f.message}</span>
-                    </div>
-                  ))}
+                {/* Filler status */}
+                <div className={`p-3 rounded-xl text-sm font-medium text-center ${
+                  fillerSuggestions.some(f => f.suggestion === 'overflow') ? 'bg-red-50 text-red-700' :
+                  fillerSuggestions.some(f => f.suggestion === 'filler_needed') ? 'bg-amber-50 text-amber-700' :
+                  'bg-emerald-50 text-emerald-700'
+                }`}>
+                  {fillerSuggestions.some(f => f.suggestion === 'overflow') ? 'Ajustements nécessaires' :
+                   fillerSuggestions.some(f => f.suggestion === 'filler_needed') ? 'Ajustements nécessaires' :
+                   'Votre cuisine est optimisée'}
                 </div>
 
-                {/* Auto-detected features */}
-                <div className="bg-[#FAFAF8] rounded-xl p-3 space-y-2 text-sm">
-                  <h3 className="font-semibold text-[#1a1a2e]">Éléments auto-détectés</h3>
-                  <div className="flex items-center gap-2 text-[#4A4A6A]">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                    Panneaux aluminium évier (modules évier)
-                  </div>
-                  <div className="flex items-center gap-2 text-[#4A4A6A]">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                    Système spider + rail (modules hauts)
-                  </div>
-                  <div className="flex items-center gap-2 text-[#4A4A6A]">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                    Système tiroir aluminium (modules tiroir)
-                  </div>
-                </div>
-
-                {/* Filler confirmation */}
                 {pendingFillers.length > 0 && (
                   <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-3">
-                    <h3 className="text-sm font-semibold text-amber-800">Fillers à confirmer</h3>
                     {pendingFillers.map((f, i) => (
                       <div key={i} className="flex items-center gap-3">
                         <span className="text-sm text-amber-700 flex-1">
@@ -765,13 +747,9 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 7: Prix ── */}
       {step === 7 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Calcul du Prix</h2></CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-[#64648B]">
-              Le système calcule le coût total incluant: matériaux, quincaillerie, main d&apos;oeuvre, marge ({MARGIN_RULES[kitchen.client_type as ClientType ?? 'standard']}%), et TVA.
-            </p>
+          <CardContent className="space-y-4 pt-5">
             <Button onClick={computePrice} loading={loading} fullWidth size="lg" variant="accent">
-              Calculer le prix <ArrowRight className="w-4 h-4" />
+              Continuer <ArrowRight className="w-4 h-4" />
             </Button>
           </CardContent>
         </Card>
@@ -780,8 +758,7 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 8: Validation ── */}
       {step === 8 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Résumé & Validation</h2></CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-5">
             {cost && (
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -824,35 +801,17 @@ export default function KitchenPipelinePage() {
       {/* ── STEP 9: Actions ── */}
       {step === 9 && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-[#1a1a2e]">Actions</h2></CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-5">
             {validation && (
-              <div className={`p-3 rounded-xl border text-sm flex items-center gap-2 ${
-                validation.overall === 'green' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
-                validation.overall === 'orange' ? 'bg-amber-50 border-amber-200 text-amber-700' :
-                'bg-red-50 border-red-200 text-red-700'
+              <div className={`p-3 rounded-xl text-sm font-medium text-center ${
+                validation.overall === 'green' ? 'bg-emerald-50 text-emerald-700' :
+                'bg-amber-50 text-amber-700'
               }`}>
-                {validation.overall === 'green' ? <CheckCircle className="w-5 h-5" /> :
-                 validation.overall === 'orange' ? <AlertTriangle className="w-5 h-5" /> :
-                 <AlertCircle className="w-5 h-5" />}
-                <div>
-                  <strong>{validation.overall === 'green' ? 'Validé' : validation.overall === 'orange' ? 'Avertissements' : 'Erreurs bloquantes'}</strong>
-                  <span className="ml-2">— {validation.issues.length} point(s)</span>
-                </div>
+                {validation.overall === 'green' ? 'Votre cuisine est optimisée' : 'Ajustements nécessaires'}
               </div>
             )}
 
-            {validation?.issues.map((issue, i) => (
-              <div key={i} className={`px-3 py-2 rounded-lg text-xs ${
-                issue.severity === 'red' ? 'bg-red-50 text-red-700' :
-                issue.severity === 'orange' ? 'bg-amber-50 text-amber-700' :
-                'bg-emerald-50 text-emerald-700'
-              }`}>
-                {issue.message}
-              </div>
-            ))}
-
-            <div className="grid grid-cols-1 gap-3 pt-2">
+            <div className="grid grid-cols-1 gap-3">
               <Button onClick={saveDraft} loading={loading} variant="secondary" fullWidth size="lg">
                 <Save className="w-4 h-4" /> Sauvegarder Brouillon
               </Button>
