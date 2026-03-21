@@ -939,12 +939,18 @@ export default function KitchenPipelinePage() {
                   </CardContent>
                 </Card>
 
+                {/* Confirmation */}
+                <p className="text-center text-sm text-emerald-600 font-medium">Aucune modification nécessaire</p>
+
                 {/* Reassurance */}
                 <div className="flex items-center justify-center gap-4 text-xs text-[#64648B]">
                   <span>Garantie 24 mois</span>
                   <span className="w-px h-3 bg-[#E8E5E0]" />
                   <span>Délai moyen : 10 à 15 jours</span>
                 </div>
+
+                {/* Final push */}
+                <p className="text-center text-xs font-semibold uppercase tracking-widest text-[#1a1a2e]">Dernière étape avant lancement</p>
 
                 {/* CTA */}
                 <Button onClick={async () => { await runValidation(); }} loading={loading} fullWidth size="lg" variant="accent">
