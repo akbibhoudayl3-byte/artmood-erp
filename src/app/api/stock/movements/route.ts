@@ -3,14 +3,27 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID, sanitizeString, sanitizeNumber } from '@/lib/auth/server';
 
+/**
+ * WORKFLOW RULES:
+ * - production_out, production_waste, production_use: BLOCKED from manual entry.
+ *   These can ONLY be created via /api/production-orders/consume (automatic from production events).
+ * - reserve: BLOCKED from manual entry. Created automatically via BOM generation.
+ * - Manual movements allowed: 'in' (purchase/receiving), 'out' (non-production), 'adjustment' (inventory correction).
+ */
+
 type MovementType = 'in' | 'out' | 'adjustment' | 'reserve' | 'production_out' | 'production_waste';
 
-const VALID_MOVEMENT_TYPES: MovementType[] = [
-  'in', 'out', 'adjustment', 'reserve', 'production_out', 'production_waste',
-];
+/** Movement types allowed via this manual endpoint */
+const MANUAL_ALLOWED_TYPES: MovementType[] = ['in', 'out', 'adjustment'];
+
+/** Movement types that MUST come from automated production workflows */
+const PRODUCTION_ONLY_TYPES: string[] = ['production_out', 'production_waste', 'production_use', 'reserve', 'consume'];
 
 /**
  * POST /api/stock/movements — Record a stock movement with server-side validation.
+ *
+ * RESTRICTED: Production consumption movements are blocked here.
+ * Use /api/production-orders/consume for production-related stock changes.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireRole(['ceo', 'workshop_manager', 'workshop_worker']);
@@ -38,9 +51,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Valid stock_item_id is required' }, { status: 400 });
   }
 
-  if (!movement_type || !VALID_MOVEMENT_TYPES.includes(movement_type)) {
+  // WORKFLOW ENFORCEMENT: Block production-only movement types from manual entry
+  if (PRODUCTION_ONLY_TYPES.includes(movement_type)) {
     return NextResponse.json(
-      { error: `Invalid movement_type. Must be one of: ${VALID_MOVEMENT_TYPES.join(', ')}` },
+      {
+        error: 'Mouvement de production interdit via cette interface',
+        message: `Les mouvements de type "${movement_type}" sont automatiques et ne peuvent être créés que via le système de production. Utilisez /api/production-orders/consume pour la consommation de matériaux.`,
+        allowed_types: MANUAL_ALLOWED_TYPES,
+      },
+      { status: 422 },
+    );
+  }
+
+  if (!movement_type || !MANUAL_ALLOWED_TYPES.includes(movement_type)) {
+    return NextResponse.json(
+      { error: `Type de mouvement invalide. Types autorisés: ${MANUAL_ALLOWED_TYPES.join(', ')}` },
       { status: 400 },
     );
   }

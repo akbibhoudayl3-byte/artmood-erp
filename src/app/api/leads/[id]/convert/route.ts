@@ -35,7 +35,7 @@ export async function POST(
   // Verify lead exists and is in a convertible state
   const { data: lead, error: leadErr } = await supabase
     .from('leads')
-    .select('id, status, full_name')
+    .select('id, status, full_name, project_id')
     .eq('id', id)
     .single();
 
@@ -43,8 +43,28 @@ export async function POST(
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
   }
 
-  if (lead.status === 'lost') {
-    return NextResponse.json({ error: 'Cannot convert a lost lead' }, { status: 400 });
+  // WORKFLOW RULE: Only "Won" leads can be converted to projects
+  if (lead.status !== 'won') {
+    return NextResponse.json(
+      {
+        error: 'Seuls les leads avec le statut "Gagné" peuvent être convertis en projet',
+        current_status: lead.status,
+        required_status: 'won',
+        message: `Le lead doit passer par toutes les étapes du pipeline (contacté → visite → devis → gagné) avant conversion.`,
+      },
+      { status: 422 },
+    );
+  }
+
+  // WORKFLOW RULE: Check lead is not already converted (locked)
+  if ((lead as any).project_id) {
+    return NextResponse.json(
+      {
+        error: 'Ce lead a déjà été converti en projet. Un lead ne peut être converti qu\'une seule fois.',
+        project_id: (lead as any).project_id,
+      },
+      { status: 409 },
+    );
   }
 
   // Create project
@@ -64,10 +84,11 @@ export async function POST(
     return NextResponse.json({ error: 'Project creation failed: ' + (projectErr?.message || 'Unknown') }, { status: 500 });
   }
 
-  // Update lead status to 'won' and link project
+  // Lock lead: link to project and mark as converted (no further modifications allowed)
   await supabase.from('leads').update({
     status: 'won',
     project_id: project.id,
+    updated_at: new Date().toISOString(),
   }).eq('id', id);
 
   await writeAuditLog({

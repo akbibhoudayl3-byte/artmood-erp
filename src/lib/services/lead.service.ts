@@ -121,14 +121,42 @@ export async function updateLead(
 
 /**
  * Change lead status and log the status change as an activity.
+ *
+ * IMPORTANT: This function enforces the Lead FSM.
+ * Status changes must pass through the pipeline validation.
+ * Use the /api/leads/[id]/transition endpoint for full validation with mandatory fields.
+ *
+ * @deprecated Prefer using the /api/leads/[id]/transition API route which provides
+ * full FSM validation with mandatory field checks.
  */
 export async function updateLeadStatus(
   id: string,
   status: string,
   userId?: string,
+  context?: { call_log?: string; visit_date?: string; quote_id?: string; quote_url?: string },
 ): Promise<ServiceResult> {
   if (!id) return fail('Lead ID is required.');
   if (!status) return fail('Status is required.');
+
+  // Fetch current lead to validate FSM transition
+  const { data: lead, error: leadErr } = await supabase()
+    .from('leads')
+    .select('id, status, project_id')
+    .eq('id', id)
+    .single();
+
+  if (leadErr || !lead) return fail('Lead not found.');
+
+  // Block changes to locked leads (converted to project)
+  if (lead.project_id && lead.status === 'won') {
+    return fail('Ce lead est verrouillé après conversion en projet. Aucune modification possible.');
+  }
+
+  // Validate FSM transition (basic check — full validation via API route)
+  const { isValidLeadTransition } = await import('@/lib/integrity/lead-fsm');
+  if (!isValidLeadTransition(lead.status as LeadStatus, status as LeadStatus)) {
+    return fail(`Transition de "${lead.status}" vers "${status}" non autorisée par le pipeline commercial.`);
+  }
 
   const { error } = await supabase()
     .from('leads')

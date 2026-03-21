@@ -122,8 +122,9 @@ async function checkAsyncPreConditions(
     }
   }
 
-  // ── → delivered: installation must be completed ───────────────────────────
+  // ── → delivered: installation must be completed + invoice required ───────
   if (to === 'delivered') {
+    // Check installations
     const { data: installations, error } = await supabase
       .from('installations')
       .select('id, status')
@@ -140,6 +141,20 @@ async function checkAsyncPreConditions(
           'Installation must be fully completed before marking the project as delivered',
         );
       }
+    }
+
+    // WORKFLOW RULE: Invoice must exist before delivery
+    const { data: invoices, error: invErr } = await supabase
+      .from('invoices')
+      .select('id, status')
+      .eq('project_id', projectId);
+
+    if (invErr) {
+      violations.push('Could not verify invoice status');
+    } else if (!invoices || invoices.length === 0) {
+      violations.push(
+        'Une facture doit être générée avant de marquer le projet comme livré. Créez une facture depuis l\'onglet Finance.',
+      );
     }
   }
 

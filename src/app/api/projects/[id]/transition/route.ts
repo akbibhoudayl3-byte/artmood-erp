@@ -94,6 +94,26 @@ export async function POST(
     );
   }
 
+  // ── WORKFLOW RULE: Delivered and cancelled projects are LOCKED ────────────
+  if (fromStatus === 'delivered') {
+    return NextResponse.json(
+      {
+        error: 'Projet verrouillé',
+        message: 'Un projet livré est définitivement verrouillé. Aucune modification de statut n\'est possible.',
+      },
+      { status: 422 },
+    );
+  }
+  if (fromStatus === 'cancelled') {
+    return NextResponse.json(
+      {
+        error: 'Projet annulé',
+        message: 'Un projet annulé est définitivement verrouillé. Aucune modification de statut n\'est possible.',
+      },
+      { status: 422 },
+    );
+  }
+
   // ── Per-transition role check ─────────────────────────────────────────────
   const requiredRoles = TRANSITION_ROLES[toStatus];
   if (requiredRoles && !requiredRoles.includes(ctx.role)) {

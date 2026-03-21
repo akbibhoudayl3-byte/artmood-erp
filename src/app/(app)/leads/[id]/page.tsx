@@ -118,12 +118,22 @@ export default function LeadDetailPage() {
     loadData();
   }
 
-  async function updateStatus(newStatus: LeadStatus) {
-    await supabase.from('leads').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
-    await supabase.from('lead_activities').insert({
-      lead_id: id, user_id: profile?.id, activity_type: 'status_change',
-      description: `Status changed to ${newStatus}`,
-    });
+  async function updateStatus(newStatus: LeadStatus, context?: { call_log?: string; visit_date?: string; quote_id?: string; lost_reason?: string }) {
+    try {
+      const res = await fetch(`/api/leads/${id}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, ...context }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.reason || data.error || 'Transition refusée');
+        return;
+      }
+    } catch {
+      alert('Erreur lors de la mise à jour du statut');
+      return;
+    }
     loadData();
   }
 

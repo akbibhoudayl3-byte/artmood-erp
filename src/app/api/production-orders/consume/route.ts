@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID, sanitizeString, sanitizeNumber } from '@/lib/auth/server';
+import { writeAuditLog } from '@/lib/security/audit';
 
 /**
  * POST /api/production-orders/consume — Record material consumption for a production order.
@@ -167,6 +168,23 @@ export async function POST(request: NextRequest) {
         .eq('id', material_id),
     ]);
   }
+
+  // 5. Audit log for material consumption
+  await writeAuditLog({
+    user_id: auth.userId,
+    action: 'consume',
+    entity_type: 'production_material',
+    entity_id: requirement_id,
+    new_value: {
+      production_order_id,
+      material_id,
+      used_qty: usedQty,
+      waste_qty: wasteQty,
+      stage: sanitizedStage,
+      material: sanitizedMaterialName,
+    },
+    notes: `Material consumed: ${usedQty} ${sanitizedUnit} of ${sanitizedMaterialName} | Waste: ${wasteQty} | Stage: ${sanitizedStage} | Order: ${sanitizedOrderName}`,
+  });
 
   return NextResponse.json({ success: true, movement_id: movement?.id }, { status: 201 });
 }

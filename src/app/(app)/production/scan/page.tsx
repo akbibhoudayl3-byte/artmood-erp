@@ -114,64 +114,41 @@ export default function ProductionScanPage() {
   async function moveToStation(station: string) {
     if (!part) return;
     setScanning(true);
+    setError('');
 
-    const { error: scanErr } = await supabase.from('production_scans').insert({
-      part_id: part.id,
-      station,
-      scanned_by: profile?.id,
-    });
+    try {
+      // Use the station transition API which enforces sequential flow
+      const res = await fetch('/api/production-orders/station-transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ part_id: part.id, to_station: station }),
+      });
+      const data = await res.json();
 
-    if (scanErr) {
-      setError('Failed to record scan: ' + scanErr.message);
-      setScanning(false);
-      return;
-    }
-
-    // Update the part's current station in the database
-    const { error: updateErr } = await supabase
-      .from('production_parts')
-      .update({ current_station: station, updated_at: new Date().toISOString() })
-      .eq('id', part.id);
-
-    if (updateErr) {
-      setError('Scan recorded but station update failed: ' + updateErr.message);
-      setScanning(false);
-      return;
-    }
-
-    // If part reached 'packing' or 'done', update the production order progress
-    if (station === 'packing' || station === 'done') {
-      const { data: orderParts } = await supabase
-        .from('production_parts')
-        .select('id, current_station')
-        .eq('production_order_id', part.production_order_id);
-
-      if (orderParts) {
-        const total = orderParts.length;
-        const completed = orderParts.filter(p =>
-          p.id === part.id ? true : (p.current_station === 'packing' || p.current_station === 'done')
-        ).length;
-        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-        await supabase
-          .from('production_orders')
-          .update({ progress, updated_at: new Date().toISOString() })
-          .eq('id', part.production_order_id);
+      if (!res.ok) {
+        setError(data.reason || data.error || 'Transition de station refusée');
+        setScanning(false);
+        return;
       }
+
+      setPart({ ...part, current_station: station });
+      setSuccess(true);
+      setScanning(false);
+
+      setTimeout(() => {
+        setSuccess(false);
+        setPart(null);
+        setPartCode('');
+      }, 2000);
+    } catch {
+      setError('Erreur réseau lors de la transition de station');
+      setScanning(false);
     }
-
-    setPart({ ...part, current_station: station });
-    setSuccess(true);
-    setScanning(false);
-
-    setTimeout(() => {
-      setSuccess(false);
-      setPart(null);
-      setPartCode('');
-    }, 2000);
   }
 
+  // Only show the NEXT valid station (sequential flow enforced by API)
   const currentIndex = PRODUCTION_STATIONS.findIndex(s => s.key === part?.current_station);
-  const nextStations = PRODUCTION_STATIONS.filter((_, i) => i > currentIndex);
+  const nextStations = PRODUCTION_STATIONS.filter((_, i) => i === currentIndex + 1);
 
   return (
     <RoleGuard allowedRoles={['ceo', 'workshop_manager', 'workshop_worker'] as any[]}>
