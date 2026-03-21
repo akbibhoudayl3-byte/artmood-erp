@@ -872,13 +872,13 @@ export default function KitchenPipelinePage() {
               <>
                 {/* Transition */}
                 <div className="text-center py-2">
-                  <p className="text-sm font-medium text-emerald-600">Votre cuisine est prête</p>
+                  <p className="text-sm font-medium text-emerald-600">Votre cuisine est prête à être fabriquée</p>
                 </div>
 
                 {/* Hero price */}
                 <Card>
                   <CardContent className="pt-8 pb-6 text-center">
-                    <p className="text-xs uppercase tracking-widest text-[#64648B] mb-3">Votre cuisine complète</p>
+                    <p className="text-xs uppercase tracking-widest text-[#64648B] mb-3">Votre cuisine sur mesure</p>
                     <p className="text-4xl font-bold text-[#1a1a2e] tracking-tight">{fmtRound(roundedTotal)}</p>
                   </CardContent>
                 </Card>
@@ -939,9 +939,16 @@ export default function KitchenPipelinePage() {
                   </CardContent>
                 </Card>
 
+                {/* Reassurance */}
+                <div className="flex items-center justify-center gap-4 text-xs text-[#64648B]">
+                  <span>Garantie 24 mois</span>
+                  <span className="w-px h-3 bg-[#E8E5E0]" />
+                  <span>Délai moyen : 10 à 15 jours</span>
+                </div>
+
                 {/* CTA */}
                 <Button onClick={async () => { await runValidation(); }} loading={loading} fullWidth size="lg" variant="accent">
-                  Lancer la fabrication <ArrowRight className="w-4 h-4" />
+                  Valider et lancer la fabrication <ArrowRight className="w-4 h-4" />
                 </Button>
               </>
             );
