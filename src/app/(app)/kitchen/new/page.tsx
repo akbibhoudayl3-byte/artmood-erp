@@ -863,79 +863,89 @@ export default function KitchenPipelinePage() {
             </Card>
           )}
 
-          {cost && (
-            <>
-              {/* Hero price */}
-              <Card>
-                <CardContent className="pt-8 pb-6 text-center">
-                  <p className="text-xs uppercase tracking-widest text-[#64648B] mb-2">Votre cuisine sur mesure</p>
-                  <p className="text-4xl font-bold text-[#1a1a2e] tracking-tight">{formatMAD(cost.total_ttc)}</p>
-                  <p className="text-xs text-[#64648B] mt-1">TTC · TVA incluse</p>
-                </CardContent>
-              </Card>
+          {cost && (() => {
+            const roundedTotal = Math.round(cost.total_ttc / 100) * 100;
+            const marketPrice = Math.round(roundedTotal * 1.4 / 1000) * 1000;
+            const fmtRound = (v: number) => `${v.toLocaleString('fr-MA')} MAD`;
 
-              {/* Market anchor */}
-              <Card>
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-[#64648B]">Cuisine équivalente marché</span>
-                    <span className="text-[#64648B] line-through">{formatMAD(roundMoney(cost.total_ttc * 1.4))}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm mt-1">
-                    <span className="font-semibold text-[#1a1a2e]">Votre prix</span>
-                    <span className="font-bold text-[#C9956B]">{formatMAD(cost.total_ttc)}</span>
-                  </div>
-                </CardContent>
-              </Card>
+            return (
+              <>
+                {/* Transition */}
+                <div className="text-center py-2">
+                  <p className="text-sm font-medium text-emerald-600">Votre cuisine est prête</p>
+                </div>
 
-              {/* Simple breakdown */}
-              <Card>
-                <CardContent className="py-4 space-y-3">
-                  <p className="text-xs uppercase tracking-widest text-[#64648B]">Détail</p>
-                  <div className="space-y-2">
-                    {[
-                      { label: 'Matériaux', value: cost.materials + cost.accessories },
-                      { label: 'Quincaillerie', value: cost.hardware },
-                      { label: 'Fabrication', value: cost.labour + cost.fixed_charges },
-                      { label: 'Installation', value: cost.installation + cost.transport },
-                    ].map(row => (
-                      <div key={row.label} className="flex items-center justify-between">
-                        <span className="text-sm text-[#64648B]">{row.label}</span>
-                        <span className="text-sm font-medium text-[#1a1a2e]">{formatMAD(roundMoney(row.value * (1 + cost.margin_percent / 100) * 1.2))}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="border-t border-[#E8E5E0] pt-2 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-[#1a1a2e]">Total</span>
-                    <span className="text-sm font-bold text-[#C9956B]">{formatMAD(cost.total_ttc)}</span>
-                  </div>
-                </CardContent>
-              </Card>
+                {/* Hero price */}
+                <Card>
+                  <CardContent className="pt-8 pb-6 text-center">
+                    <p className="text-xs uppercase tracking-widest text-[#64648B] mb-3">Votre cuisine complète</p>
+                    <p className="text-4xl font-bold text-[#1a1a2e] tracking-tight">{fmtRound(roundedTotal)}</p>
+                  </CardContent>
+                </Card>
 
-              {/* Value justification */}
-              <Card>
-                <CardContent className="py-4">
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    {[
-                      { title: 'Sur mesure', sub: 'Dimensions exactes' },
-                      { title: 'Fabrication CNC', sub: 'Précision industrielle' },
-                      { title: 'Finition premium', sub: 'Qualité garantie' },
-                    ].map(v => (
-                      <div key={v.title}>
-                        <p className="text-xs font-semibold text-[#1a1a2e]">{v.title}</p>
-                        <p className="text-[10px] text-[#64648B] mt-0.5">{v.sub}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+                {/* Market anchor */}
+                <Card>
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-[#64648B]">Prix marché</span>
+                      <span className="text-[#64648B] line-through">&asymp; {fmtRound(marketPrice)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm mt-1">
+                      <span className="font-semibold text-[#1a1a2e]">Votre prix</span>
+                      <span className="font-bold text-[#C9956B]">{fmtRound(roundedTotal)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
 
-              {/* CTA */}
-              <Button onClick={async () => { await runValidation(); }} loading={loading} fullWidth size="lg" variant="accent">
-                Valider et lancer production <ArrowRight className="w-4 h-4" />
-              </Button>
-            </>
-          )}
+                {/* Premium breakdown */}
+                <Card>
+                  <CardContent className="py-4 space-y-3">
+                    <p className="text-xs uppercase tracking-widest text-[#64648B]">Détail</p>
+                    <div className="space-y-2">
+                      {[
+                        { label: 'Structure & panneaux', value: cost.materials + cost.accessories },
+                        { label: 'Accessoires & ferrures', value: cost.hardware },
+                        { label: 'Fabrication CNC', value: cost.labour + cost.fixed_charges },
+                        { label: 'Pose & installation', value: cost.installation + cost.transport },
+                      ].map(row => (
+                        <div key={row.label} className="flex items-center justify-between">
+                          <span className="text-sm text-[#64648B]">{row.label}</span>
+                          <span className="text-sm font-medium text-[#1a1a2e]">{formatMAD(roundMoney(row.value * (1 + cost.margin_percent / 100) * 1.2))}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-[#E8E5E0] pt-2 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-[#1a1a2e]">Total</span>
+                      <span className="text-sm font-bold text-[#C9956B]">{fmtRound(roundedTotal)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Value badges */}
+                <Card>
+                  <CardContent className="py-4">
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      {[
+                        { title: '100% sur mesure', sub: 'Dimensions exactes' },
+                        { title: 'Découpe CNC précision', sub: 'Qualité industrielle' },
+                        { title: 'Finition haut de gamme', sub: 'Matériaux premium' },
+                      ].map(v => (
+                        <div key={v.title}>
+                          <p className="text-xs font-semibold text-[#1a1a2e]">{v.title}</p>
+                          <p className="text-[10px] text-[#64648B] mt-0.5">{v.sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* CTA */}
+                <Button onClick={async () => { await runValidation(); }} loading={loading} fullWidth size="lg" variant="accent">
+                  Lancer la fabrication <ArrowRight className="w-4 h-4" />
+                </Button>
+              </>
+            );
+          })()}
         </div>
       )}
 
