@@ -4,13 +4,26 @@
  * Enforces legal lead status transitions and mandatory field validation.
  * All lead status changes MUST pass through this module.
  *
- * VALID TRANSITION GRAPH (strictly sequential — no skipping):
- *   new              → contacted, lost
- *   contacted        → visit_scheduled, lost
- *   visit_scheduled  → quote_sent, lost
- *   quote_sent       → won, lost
- *   won              → (terminal — locked after conversion)
- *   lost             → new  (reopen only)
+ * VALID TRANSITION GRAPH:
+ *
+ *   STANDARD FLOW (strictly sequential):
+ *     new              → contacted, lost
+ *     contacted        → visit_scheduled, quote_sent*, lost
+ *     visit_scheduled  → quote_sent, lost
+ *     quote_sent       → won, lost
+ *     won              → (terminal — locked after conversion)
+ *     lost             → new  (reopen only)
+ *
+ *   * contacted → quote_sent is a CONTROLLED BYPASS that requires ALL of:
+ *     1. plan_file uploaded (file URL)
+ *     2. measurements_provided_by_client = true
+ *     3. disclaimer_accepted = true ("ArtMood n'est pas responsable des erreurs de mesure")
+ *     4. quote document attached (quote_id or quote_url)
+ *
+ *     When this bypass is used:
+ *     - measurement_source is set to "external"
+ *     - The lead is flagged as "External Measurements"
+ *     - A warning-level audit log is recorded
  *
  * MANDATORY FIELDS PER STAGE:
  *   → contacted       : call log activity required
@@ -35,11 +48,17 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { LeadStatus } from '@/types/database';
 
+// ── Measurement source ────────────────────────────────────────────────────────
+
+export type MeasurementSource = 'internal' | 'external';
+
 // ── Transition Map ────────────────────────────────────────────────────────────
+// contacted → quote_sent is conditionally allowed (bypass with plan).
+// The FSM map includes it; the bypass conditions are enforced in validation.
 
 export const VALID_LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   new:              ['contacted', 'lost'],
-  contacted:        ['visit_scheduled', 'lost'],
+  contacted:        ['visit_scheduled', 'quote_sent', 'lost'],
   visit_scheduled:  ['quote_sent', 'lost'],
   quote_sent:       ['won', 'lost'],
   won:              [],      // terminal — locked after project conversion
@@ -59,7 +78,7 @@ export const LEAD_PIPELINE_ORDER: readonly LeadStatus[] = [
 // ── Result Type ───────────────────────────────────────────────────────────────
 
 export type LeadTransitionResult =
-  | { allowed: true }
+  | { allowed: true; isBypass?: boolean }
   | { allowed: false; reason: string; violations: string[] };
 
 // ── Transition context (mandatory fields per stage) ───────────────────────────
@@ -72,12 +91,30 @@ export interface LeadTransitionContext {
   /** Quote ID or URL for → quote_sent */
   quote_id?: string;
   quote_url?: string;
+
+  // ── Plan-based bypass fields (contacted → quote_sent) ─────────────────
+  /** Uploaded plan file URL — required for bypass */
+  plan_file?: string;
+  /** Client/architect provided measurements — required for bypass */
+  measurements_provided_by_client?: boolean;
+  /** Disclaimer accepted: "ArtMood n'est pas responsable des erreurs de mesure" */
+  disclaimer_accepted?: boolean;
+}
+
+// ── Bypass Detection ──────────────────────────────────────────────────────────
+
+/**
+ * Returns true if this transition is the plan-based bypass
+ * (contacted → quote_sent, skipping visit_scheduled).
+ */
+export function isBypassTransition(from: LeadStatus, to: LeadStatus): boolean {
+  return from === 'contacted' && to === 'quote_sent';
 }
 
 // ── Core Validation ───────────────────────────────────────────────────────────
 
 /**
- * Check if the FSM edge is valid (no skipping allowed).
+ * Check if the FSM edge is valid.
  */
 export function isValidLeadTransition(from: LeadStatus, to: LeadStatus): boolean {
   return (VALID_LEAD_TRANSITIONS[from] as readonly string[]).includes(to);
@@ -85,8 +122,10 @@ export function isValidLeadTransition(from: LeadStatus, to: LeadStatus): boolean
 
 /**
  * Synchronous mandatory field checks per target stage.
+ * Includes bypass-specific validation when contacted → quote_sent.
  */
 function checkMandatoryFields(
+  from: LeadStatus,
   to: LeadStatus,
   context: LeadTransitionContext,
 ): string[] {
@@ -105,8 +144,33 @@ function checkMandatoryFields(
   }
 
   if (to === 'quote_sent') {
+    // Quote document is always required for → quote_sent
     if (!context.quote_id?.trim() && !context.quote_url?.trim()) {
       violations.push('Un devis doit être attaché avant d\'envoyer le devis (quote document required)');
+    }
+
+    // ── BYPASS: contacted → quote_sent requires extra conditions ──────────
+    if (isBypassTransition(from, to)) {
+      if (!context.plan_file?.trim()) {
+        violations.push(
+          'Un fichier plan est obligatoire pour passer directement au devis sans visite. ' +
+          'Téléchargez le plan fourni par le client ou l\'architecte.'
+        );
+      }
+
+      if (!context.measurements_provided_by_client) {
+        violations.push(
+          'Vous devez confirmer que les mesures ont été fournies par le client ou l\'architecte ' +
+          '(measurements_provided_by_client = true)'
+        );
+      }
+
+      if (!context.disclaimer_accepted) {
+        violations.push(
+          'Vous devez accepter la clause de non-responsabilité: ' +
+          '"ArtMood n\'est pas responsable des erreurs de mesure fournies par le client/architecte"'
+        );
+      }
     }
   }
 
@@ -195,6 +259,8 @@ async function checkAsyncPreConditions(
 
 /**
  * Full lead transition validation: FSM edge + mandatory fields + async checks.
+ *
+ * Returns { allowed: true, isBypass: true } when the plan-based bypass is used.
  */
 export async function validateLeadTransition(params: {
   from: LeadStatus;
@@ -205,7 +271,7 @@ export async function validateLeadTransition(params: {
 }): Promise<LeadTransitionResult> {
   const { from, to, leadId, context, supabase } = params;
 
-  // 1. FSM edge check — no skipping stages
+  // 1. FSM edge check
   if (!isValidLeadTransition(from, to)) {
     const fromIdx = LEAD_PIPELINE_ORDER.indexOf(from);
     const toIdx = LEAD_PIPELINE_ORDER.indexOf(to);
@@ -224,8 +290,8 @@ export async function validateLeadTransition(params: {
     };
   }
 
-  // 2. Mandatory field checks (sync)
-  const fieldViolations = checkMandatoryFields(to, context);
+  // 2. Mandatory field checks (sync) — includes bypass-specific conditions
+  const fieldViolations = checkMandatoryFields(from, to, context);
 
   // 3. Async pre-conditions (DB checks)
   const asyncViolations = await checkAsyncPreConditions(to, from, leadId, supabase);
@@ -240,7 +306,10 @@ export async function validateLeadTransition(params: {
     };
   }
 
-  return { allowed: true };
+  // Flag bypass transitions
+  const bypass = isBypassTransition(from, to);
+
+  return { allowed: true, isBypass: bypass };
 }
 
 /**
@@ -252,9 +321,11 @@ export async function guardLeadTransition(params: {
   leadId: string;
   context: LeadTransitionContext;
   supabase: SupabaseClient;
-}): Promise<null | NextResponse> {
+}): Promise<{ guard: null; isBypass: boolean } | NextResponse> {
   const result = await validateLeadTransition(params);
-  if (result.allowed) return null;
+  if (result.allowed) {
+    return { guard: null, isBypass: result.isBypass ?? false };
+  }
 
   return NextResponse.json(
     {
@@ -288,3 +359,12 @@ export function getLeadStatusLabel(status: LeadStatus): string {
   };
   return labels[status] ?? status;
 }
+
+/**
+ * Disclaimer text for the plan-based bypass.
+ * Must be shown and accepted by the user before the bypass transition.
+ */
+export const BYPASS_DISCLAIMER =
+  "ArtMood n'est pas responsable des erreurs de mesure fournies par le client ou l'architecte. " +
+  "En validant cette option, vous confirmez que les mesures sont externes et que la responsabilité " +
+  "des dimensions incombe au fournisseur des plans.";

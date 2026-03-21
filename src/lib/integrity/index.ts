@@ -45,12 +45,14 @@ export {
   validateLeadTransition,
   guardLeadTransition,
   isValidLeadTransition,
+  isBypassTransition,
   getAvailableLeadTransitions,
   getLeadStatusLabel,
   VALID_LEAD_TRANSITIONS,
   LEAD_PIPELINE_ORDER,
+  BYPASS_DISCLAIMER,
 } from '@/lib/integrity/lead-fsm';
-export type { LeadTransitionResult, LeadTransitionContext } from '@/lib/integrity/lead-fsm';
+export type { LeadTransitionResult, LeadTransitionContext, MeasurementSource } from '@/lib/integrity/lead-fsm';
 
 // ── Production Station State Machine ──────────────────────────────────────────
 export {

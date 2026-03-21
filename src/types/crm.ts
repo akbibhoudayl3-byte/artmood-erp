@@ -14,6 +14,8 @@ export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'revised';
 
+export type MeasurementSource = 'internal' | 'external';
+
 export interface Lead {
   id: string;
   full_name: string;
@@ -30,6 +32,14 @@ export interface Lead {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** "external" when plan-based bypass was used (contacted → quote_sent without visit) */
+  measurement_source: MeasurementSource | null;
+  /** URL of the plan file uploaded for bypass */
+  plan_file_url: string | null;
+  /** Whether the client/architect provided measurements */
+  measurements_provided_by_client: boolean;
+  /** Whether the disclaimer was accepted for external measurements */
+  disclaimer_accepted: boolean;
   // Joined
   assigned_profile?: Profile;
   lead_photos?: LeadPhoto[];

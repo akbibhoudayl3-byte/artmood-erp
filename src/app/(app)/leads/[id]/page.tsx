@@ -14,7 +14,7 @@ import Input from '@/components/ui/Input';
 import {
   ArrowLeft, Phone, MapPin, Mail, Calendar, User,
   MessageSquare, Clock, Instagram, Facebook, Globe, Users, Building, Bell, Edit2, X,
-  Hammer
+  Hammer, FileUp, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
@@ -58,6 +58,22 @@ export default function LeadDetailPage() {
   });
   const [converting, setConverting] = useState(false);
   const [convertError, setConvertError] = useState('');
+
+  // Bypass modal state (contacted → quote_sent without visit)
+  const [showBypassModal, setShowBypassModal] = useState(false);
+  const [bypassForm, setBypassForm] = useState({
+    plan_file: '',
+    measurements_provided_by_client: false,
+    disclaimer_accepted: false,
+    quote_id: '',
+    quote_url: '',
+  });
+  const [bypassSaving, setBypassSaving] = useState(false);
+  const [bypassError, setBypassError] = useState('');
+
+  // Transition prompt state (call_log, visit_date, lost_reason)
+  const [transitionPrompt, setTransitionPrompt] = useState<{ target: LeadStatus; field: string } | null>(null);
+  const [transitionInput, setTransitionInput] = useState('');
 
   useEffect(() => { loadData(); }, [id]);
 
@@ -135,6 +151,86 @@ export default function LeadDetailPage() {
       return;
     }
     loadData();
+  }
+
+  function openBypassModal() {
+    setBypassForm({ plan_file: '', measurements_provided_by_client: false, disclaimer_accepted: false, quote_id: '', quote_url: '' });
+    setBypassError('');
+    setShowBypassModal(true);
+  }
+
+  async function submitBypass() {
+    setBypassSaving(true);
+    setBypassError('');
+    try {
+      const res = await fetch(`/api/leads/${id}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'quote_sent',
+          plan_file: bypassForm.plan_file,
+          measurements_provided_by_client: bypassForm.measurements_provided_by_client,
+          disclaimer_accepted: bypassForm.disclaimer_accepted,
+          quote_id: bypassForm.quote_id || undefined,
+          quote_url: bypassForm.quote_url || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBypassError(data.reason || data.error || 'Transition refusée');
+        setBypassSaving(false);
+        return;
+      }
+      setShowBypassModal(false);
+      setBypassSaving(false);
+      loadData();
+    } catch {
+      setBypassError('Erreur réseau');
+      setBypassSaving(false);
+    }
+  }
+
+  function handleStatusClick(targetStatus: LeadStatus) {
+    // For transitions that need input, show a prompt
+    if (targetStatus === 'contacted') {
+      setTransitionPrompt({ target: 'contacted', field: 'call_log' });
+      setTransitionInput('');
+      return;
+    }
+    if (targetStatus === 'visit_scheduled') {
+      setTransitionPrompt({ target: 'visit_scheduled', field: 'visit_date' });
+      setTransitionInput('');
+      return;
+    }
+    if (targetStatus === 'quote_sent' && lead?.status === 'contacted') {
+      // This is a bypass — open the bypass modal
+      openBypassModal();
+      return;
+    }
+    if (targetStatus === 'quote_sent') {
+      setTransitionPrompt({ target: 'quote_sent', field: 'quote_id' });
+      setTransitionInput('');
+      return;
+    }
+    if (targetStatus === 'lost') {
+      setTransitionPrompt({ target: 'lost', field: 'lost_reason' });
+      setTransitionInput('');
+      return;
+    }
+    // For won and others, just call directly
+    updateStatus(targetStatus);
+  }
+
+  function submitTransitionPrompt() {
+    if (!transitionPrompt) return;
+    const { target, field } = transitionPrompt;
+    if (!transitionInput.trim() && field !== 'lost_reason') {
+      alert('Ce champ est obligatoire');
+      return;
+    }
+    updateStatus(target, { [field]: transitionInput });
+    setTransitionPrompt(null);
+    setTransitionInput('');
   }
 
   async function addNote() {
@@ -323,19 +419,75 @@ export default function LeadDetailPage() {
         </div>
       )}
 
-      {/* Status Actions */}
-      {canManageLeads && (
+      {/* External Measurements Badge */}
+      {lead.measurement_source === 'external' && (
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-3 flex items-start gap-3">
+          <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold text-amber-800 text-sm">Mesures externes</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Les mesures ont été fournies par le client/architecte. ArtMood n&apos;est pas responsable des erreurs de mesure.
+            </p>
+            {lead.plan_file_url && (
+              <a href={lead.plan_file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-amber-700 underline mt-1 inline-block">
+                Voir le plan fourni
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Status Actions — FSM-aware */}
+      {canManageLeads && lead.status !== 'won' && lead.status !== 'lost' && (
         <Card>
           <CardHeader><h2 className="font-semibold text-sm">{t('projects.move_to')}</h2></CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {LEAD_STAGES.filter(s => s.key !== lead.status).map(stage => (
-                <Button key={stage.key} variant={stage.key === 'won' ? 'success' : stage.key === 'lost' ? 'danger' : 'secondary'} size="sm"
-                  onClick={() => updateStatus(stage.key as LeadStatus)}>
-                  {stage.label}
+              {/* Standard next step */}
+              {lead.status === 'new' && (
+                <Button variant="secondary" size="sm" onClick={() => handleStatusClick('contacted')}>
+                  Contacté
                 </Button>
-              ))}
+              )}
+              {lead.status === 'contacted' && (
+                <>
+                  <Button variant="secondary" size="sm" onClick={() => handleStatusClick('visit_scheduled')}>
+                    Visite planifiée
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={openBypassModal}
+                    className="!border-amber-300 !text-amber-700 hover:!bg-amber-50"
+                  >
+                    <FileUp size={14} className="mr-1" /> Devis direct (plan fourni)
+                  </Button>
+                </>
+              )}
+              {lead.status === 'visit_scheduled' && (
+                <Button variant="secondary" size="sm" onClick={() => handleStatusClick('quote_sent')}>
+                  Devis envoyé
+                </Button>
+              )}
+              {lead.status === 'quote_sent' && (
+                <Button variant="success" size="sm" onClick={() => handleStatusClick('won')}>
+                  Gagné
+                </Button>
+              )}
+              {/* Lost — always available */}
+              <Button variant="danger" size="sm" onClick={() => handleStatusClick('lost')}>
+                Perdu
+              </Button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reopen from lost */}
+      {canManageLeads && lead.status === 'lost' && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-sm">{t('projects.move_to')}</h2></CardHeader>
+          <CardContent>
+            <Button variant="secondary" size="sm" onClick={() => updateStatus('new')}>
+              Réouvrir (Nouveau)
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -405,6 +557,153 @@ export default function LeadDetailPage() {
               <button onClick={saveEdit} disabled={editSaving || !editForm.full_name.trim() || !editForm.phone.trim()}
                 className="flex-1 py-2.5 bg-[#1E2F52] text-white rounded-xl text-sm font-medium disabled:opacity-50">
                 {editSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transition Prompt Modal (call_log, visit_date, quote_id, lost_reason) */}
+      {transitionPrompt && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-[#1a1a2e]">
+                {transitionPrompt.field === 'call_log' && 'Journal d\'appel'}
+                {transitionPrompt.field === 'visit_date' && 'Date de visite'}
+                {transitionPrompt.field === 'quote_id' && 'Référence du devis'}
+                {transitionPrompt.field === 'lost_reason' && 'Raison de la perte'}
+              </h2>
+              <button onClick={() => setTransitionPrompt(null)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <div>
+              {transitionPrompt.field === 'visit_date' ? (
+                <Input type="date" label="Date de visite *" value={transitionInput} onChange={(e) => setTransitionInput(e.target.value)} />
+              ) : (
+                <Textarea
+                  rows={3}
+                  placeholder={
+                    transitionPrompt.field === 'call_log' ? 'Résumé de l\'appel...' :
+                    transitionPrompt.field === 'quote_id' ? 'ID du devis ou URL...' :
+                    'Raison (optionnel)...'
+                  }
+                  value={transitionInput}
+                  onChange={(e) => setTransitionInput(e.target.value)}
+                />
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setTransitionPrompt(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600">Annuler</button>
+              <button onClick={submitTransitionPrompt}
+                className="flex-1 py-2.5 bg-[#1E2F52] text-white rounded-xl text-sm font-medium">
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bypass Modal — Contacted → Quote Sent (plan-based, skip visit) */}
+      {showBypassModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-[#1a1a2e] flex items-center gap-2">
+                  <FileUp size={18} className="text-amber-600" /> Devis direct — Plan fourni
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Passer directement au devis sans visite sur site. Un plan doit être fourni.
+                </p>
+              </div>
+              <button onClick={() => setShowBypassModal(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+
+            {bypassError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-sm text-red-700">
+                {bypassError}
+              </div>
+            )}
+
+            {/* Warning banner */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 flex items-start gap-2">
+              <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-800">
+                Cette option permet de sauter l&apos;étape de visite lorsque le client ou l&apos;architecte fournit un plan avec les mesures.
+                Les mesures seront marquées comme <strong>&quot;externes&quot;</strong>.
+              </p>
+            </div>
+
+            {/* Plan file upload */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Fichier plan (URL) *</label>
+              <input
+                value={bypassForm.plan_file}
+                onChange={e => setBypassForm(f => ({...f, plan_file: e.target.value}))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                placeholder="URL du plan téléchargé..."
+              />
+              <p className="text-xs text-gray-400 mt-1">Téléchargez le plan dans Documents puis collez l&apos;URL ici</p>
+            </div>
+
+            {/* Quote reference */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Référence du devis *</label>
+              <input
+                value={bypassForm.quote_id}
+                onChange={e => setBypassForm(f => ({...f, quote_id: e.target.value}))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                placeholder="ID ou URL du devis..."
+              />
+            </div>
+
+            {/* Measurements checkbox */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bypassForm.measurements_provided_by_client}
+                onChange={e => setBypassForm(f => ({...f, measurements_provided_by_client: e.target.checked}))}
+                className="mt-1 w-4 h-4 rounded border-gray-300"
+              />
+              <span className="text-sm text-gray-700">
+                Je confirme que les mesures ont été fournies par le <strong>client ou l&apos;architecte</strong>
+              </span>
+            </label>
+
+            {/* Disclaimer checkbox */}
+            <div className="border border-amber-200 rounded-xl p-3 bg-amber-50/50">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={bypassForm.disclaimer_accepted}
+                  onChange={e => setBypassForm(f => ({...f, disclaimer_accepted: e.target.checked}))}
+                  className="mt-1 w-4 h-4 rounded border-amber-400"
+                />
+                <span className="text-sm text-amber-900">
+                  <strong>Clause de non-responsabilité:</strong> ArtMood n&apos;est pas responsable des erreurs de mesure
+                  fournies par le client ou l&apos;architecte. La responsabilité des dimensions incombe au fournisseur des plans.
+                </span>
+              </label>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setShowBypassModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600">
+                Annuler
+              </button>
+              <button
+                onClick={submitBypass}
+                disabled={
+                  bypassSaving ||
+                  !bypassForm.plan_file.trim() ||
+                  !bypassForm.measurements_provided_by_client ||
+                  !bypassForm.disclaimer_accepted ||
+                  (!bypassForm.quote_id.trim() && !bypassForm.quote_url.trim())
+                }
+                className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {bypassSaving ? 'Envoi...' : <><CheckCircle size={14} /> Valider le bypass</>}
               </button>
             </div>
           </div>
