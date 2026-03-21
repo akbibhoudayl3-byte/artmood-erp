@@ -36,7 +36,7 @@ export default function LeadDetailPage() {
   const supabase = createClient();
   const { t } = useLocale();
 
-  const [lead, setLead] = useState<Lead & { assigned_profile?: { full_name: string }; project_id?: string | null } | null>(null);
+  const [lead, setLead] = useState<Lead & { assigned_profile?: { full_name: string }; project_id?: string | null; converted_at?: string | null } | null>(null);
   const [activities, setActivities] = useState<(LeadActivity & { user?: { full_name: string } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState('');
@@ -279,6 +279,9 @@ export default function LeadDetailPage() {
   if (loading) return <div className="animate-pulse"><div className="h-96 bg-gray-200 rounded-xl" /></div>;
   if (!lead) return <div className="text-center py-12 text-gray-500">Lead not found</div>;
 
+  // Lead is READ-ONLY after conversion to project
+  const isConverted = !!(lead.converted_at || lead.project_id);
+
   return (
     <RoleGuard allowedRoles={['ceo', 'commercial_manager', 'community_manager'] as any[]}>
     <div className="space-y-4">
@@ -290,7 +293,7 @@ export default function LeadDetailPage() {
           <h1 className="text-xl font-bold text-gray-900">{lead.full_name}</h1>
           <div className="flex items-center gap-2 mt-0.5">
             <StatusBadge status={lead.status} />
-            {canManageLeads && (
+            {canManageLeads && !isConverted && (
               <button onClick={openEdit} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Edit lead">
                 <Edit2 size={16} className="text-gray-500" />
               </button>
@@ -340,8 +343,8 @@ export default function LeadDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Follow-up Scheduling */}
-      {canManageLeads && (
+      {/* Follow-up Scheduling — hidden when lead is converted (read-only) */}
+      {canManageLeads && !isConverted && (
         <Card>
           <CardHeader><h2 className="font-semibold text-sm flex items-center gap-2"><Bell size={16} /> Follow-up Reminder</h2></CardHeader>
           <CardContent>
@@ -406,15 +409,26 @@ export default function LeadDetailPage() {
         </div>
       )}
 
-      {/* If already linked to a project, show a link */}
-      {lead.project_id && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 flex items-center justify-between gap-3">
-          <p className="text-sm text-blue-700 font-medium">This lead has been converted to a project.</p>
+      {/* Converted lead — locked, read-only banner */}
+      {isConverted && (
+        <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 p-4 flex items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
+              <CheckCircle size={18} className="text-blue-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-blue-800 text-sm">Lead converti en projet</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Ce lead est verrouillé en lecture seule.
+                {lead.converted_at && ` Converti le ${new Date(lead.converted_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}.`}
+              </p>
+            </div>
+          </div>
           <button
             onClick={() => router.push(`/projects/${lead.project_id}`)}
-            className="text-sm text-blue-600 underline font-semibold"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl whitespace-nowrap transition-colors"
           >
-            View Project
+            Voir le projet
           </button>
         </div>
       )}
@@ -496,10 +510,12 @@ export default function LeadDetailPage() {
       <Card>
         <CardHeader><h2 className="font-semibold text-sm">Activity</h2></CardHeader>
         <CardContent>
-          <div className="flex gap-2 mb-4">
-            <Textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Add a note..." rows={2} />
-            <Button variant="primary" size="sm" onClick={addNote} className="self-end">{t('common.add')}</Button>
-          </div>
+          {!isConverted && (
+            <div className="flex gap-2 mb-4">
+              <Textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Add a note..." rows={2} />
+              <Button variant="primary" size="sm" onClick={addNote} className="self-end">{t('common.add')}</Button>
+            </div>
+          )}
           <div className="space-y-3">
             {activities.map(act => (
               <div key={act.id} className="flex gap-3 text-sm border-l-2 border-gray-200 pl-3">

@@ -1,104 +1,147 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { requireRole, isValidUUID, sanitizeString, sanitizeNumber } from '@/lib/auth/server';
-import { writeAuditLog } from '@/lib/security/audit';
+/**
+ * Data Integrity Engine — Lead → Project Conversion Endpoint
+ *
+ * POST /api/leads/[id]/convert
+ *
+ * Converts a WON lead into a project using an ATOMIC database transaction (RPC).
+ * The RPC function `convert_lead_to_project` wraps everything in a single transaction:
+ *   1. Validates lead status = "won" and not already converted
+ *   2. Generates auto-reference ART-YYYY-XXXX
+ *   3. Creates the project (status = "measurements")
+ *   4. Locks the lead (project_id + converted_at)
+ *   5. If anything fails → full rollback
+ *
+ * RULES:
+ *   - ONLY "won" leads can be converted
+ *   - Double conversion is blocked (project_id already set)
+ *   - Lead becomes READ-ONLY after conversion
+ *   - Audit log: "lead_converted_to_project"
+ */
+
+import { NextResponse } from 'next/server';
+import { guard } from '@/lib/security/guardian';
+import { isValidUUID, sanitizeString, sanitizeNumber } from '@/lib/auth/server';
 
 export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole(['ceo', 'commercial_manager', 'operations_manager', 'owner_admin']);
-  if (auth instanceof NextResponse) return auth;
+  const ctx = await guard(['ceo', 'commercial_manager', 'operations_manager', 'owner_admin']);
+  if (ctx instanceof NextResponse) return ctx;
 
-  const { id } = await params;
-  if (!isValidUUID(id)) {
+  const { id: leadId } = await params;
+
+  if (!isValidUUID(leadId)) {
     return NextResponse.json({ error: 'Invalid lead ID' }, { status: 400 });
   }
 
-  const body = await request.json();
-
-  const client_name = sanitizeString(body.client_name, 200);
-  const client_phone = sanitizeString(body.client_phone, 30);
-
-  if (!client_name || !client_phone) {
-    return NextResponse.json({ error: 'Le nom et le téléphone client sont obligatoires' }, { status: 400 });
+  let body: {
+    client_name?: string;
+    client_phone?: string;
+    client_email?: string;
+    client_city?: string;
+    budget?: number | string;
+    notes?: string;
+    project_type?: string;
+  };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll() { return cookieStore.getAll(); }, setAll() {} } }
+  const clientName = sanitizeString(body.client_name ?? '', 200);
+  const clientPhone = sanitizeString(body.client_phone ?? '', 30);
+
+  if (!clientName || !clientPhone) {
+    return NextResponse.json(
+      { error: 'Le nom et le téléphone client sont obligatoires' },
+      { status: 400 },
+    );
+  }
+
+  // ── ATOMIC CONVERSION via Supabase RPC ────────────────────────────────────
+  // The RPC function `convert_lead_to_project` wraps everything in ONE transaction:
+  //   - Validates lead status + not already converted (with row lock)
+  //   - Generates ART-YYYY-XXXX reference
+  //   - Creates project
+  //   - Locks lead (project_id + converted_at)
+  //   - Rolls back everything on any failure
+
+  const { data: rpcResult, error: rpcError } = await ctx.supabase.rpc(
+    'convert_lead_to_project',
+    {
+      p_lead_id: leadId,
+      p_client_name: clientName,
+      p_client_phone: clientPhone,
+      p_client_email: sanitizeString(body.client_email ?? '', 200) || null,
+      p_client_city: sanitizeString(body.client_city ?? '', 100) || null,
+      p_budget: sanitizeNumber(body.budget, { min: 0 }) || 0,
+      p_notes: sanitizeString(body.notes ?? '', 2000) || null,
+      p_created_by: ctx.userId,
+      p_project_type: body.project_type || 'kitchen',
+    },
   );
 
-  // Verify lead exists and is in a convertible state
-  const { data: lead, error: leadErr } = await supabase
-    .from('leads')
-    .select('id, status, full_name, project_id')
-    .eq('id', id)
+  if (rpcError) {
+    return NextResponse.json(
+      { error: 'Conversion failed', message: rpcError.message },
+      { status: 500 },
+    );
+  }
+
+  // RPC returns JSONB with { ok, error?, project_id?, ... }
+  if (!rpcResult?.ok) {
+    const statusCode = rpcResult?.error?.includes('déjà été converti') ? 409
+      : rpcResult?.error?.includes('statut') ? 422
+      : 400;
+    return NextResponse.json(
+      {
+        error: rpcResult?.error || 'Conversion failed',
+        current_status: rpcResult?.current_status,
+        project_id: rpcResult?.project_id,
+      },
+      { status: statusCode },
+    );
+  }
+
+  // ── Fetch created project for response ──────────────────────────────────
+  const { data: project } = await ctx.supabase
+    .from('projects')
+    .select('id, reference_code, client_name, status, lead_id')
+    .eq('id', rpcResult.project_id)
     .single();
 
-  if (!lead || leadErr) {
-    return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
-  }
-
-  // WORKFLOW RULE: Only "Won" leads can be converted to projects
-  if (lead.status !== 'won') {
-    return NextResponse.json(
-      {
-        error: 'Seuls les leads avec le statut "Gagné" peuvent être convertis en projet',
-        current_status: lead.status,
-        required_status: 'won',
-        message: `Le lead doit passer par toutes les étapes du pipeline (contacté → visite → devis → gagné) avant conversion.`,
-      },
-      { status: 422 },
-    );
-  }
-
-  // WORKFLOW RULE: Check lead is not already converted (locked)
-  if ((lead as any).project_id) {
-    return NextResponse.json(
-      {
-        error: 'Ce lead a déjà été converti en projet. Un lead ne peut être converti qu\'une seule fois.',
-        project_id: (lead as any).project_id,
-      },
-      { status: 409 },
-    );
-  }
-
-  // Create project
-  const { data: project, error: projectErr } = await supabase.from('projects').insert({
-    client_name,
-    client_phone,
-    client_email: sanitizeString(body.client_email, 200),
-    client_city: sanitizeString(body.client_city, 100),
-    total_amount: sanitizeNumber(body.budget, { min: 0 }) || 0,
-    status: 'measurements',
-    notes: sanitizeString(body.notes, 2000),
-    source_lead_id: id,
-    created_by: auth.userId,
-  }).select().single();
-
-  if (projectErr || !project) {
-    return NextResponse.json({ error: 'Project creation failed: ' + (projectErr?.message || 'Unknown') }, { status: 500 });
-  }
-
-  // Lock lead: link to project and mark as converted (no further modifications allowed)
-  await supabase.from('leads').update({
-    status: 'won',
-    project_id: project.id,
-    updated_at: new Date().toISOString(),
-  }).eq('id', id);
-
-  await writeAuditLog({
-    user_id: auth.userId,
-    action: 'create',
-    entity_type: 'lead',
-    entity_id: id,
-    new_value: { project_id: project.id },
-    notes: `Lead converted to project ${project.reference_code || project.id}`,
+  // ── Log activity on lead ────────────────────────────────────────────────
+  await ctx.supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    user_id: ctx.userId,
+    activity_type: 'conversion',
+    description: `Lead converti en projet ${rpcResult.project_reference}. Le lead est désormais verrouillé.`,
   });
 
-  return NextResponse.json({ lead_id: id, project }, { status: 201 });
+  // ── Audit log: dedicated action ─────────────────────────────────────────
+  await ctx.audit({
+    action: 'lead_converted_to_project',
+    entity_type: 'lead',
+    entity_id: leadId,
+    old_value: { status: 'won' },
+    new_value: {
+      project_id: rpcResult.project_id,
+      project_reference: rpcResult.project_reference,
+      converted_at: rpcResult.converted_at,
+    },
+    notes: `Lead converted to project ${rpcResult.project_reference}. Atomic transaction. Lead is now locked/read-only.`,
+  });
+
+  return NextResponse.json(
+    {
+      ok: true,
+      lead_id: leadId,
+      project: project || { id: rpcResult.project_id, reference_code: rpcResult.project_reference },
+      converted_at: rpcResult.converted_at,
+      message: `Lead converti en projet ${rpcResult.project_reference}. Le lead est verrouillé.`,
+    },
+    { status: 201 },
+  );
 }

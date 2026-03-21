@@ -40,6 +40,10 @@ export interface Lead {
   measurements_provided_by_client: boolean;
   /** Whether the disclaimer was accepted for external measurements */
   disclaimer_accepted: boolean;
+  /** FK to project — set on conversion. Non-null = lead is locked/read-only */
+  project_id: string | null;
+  /** Timestamp when lead was converted to project. Non-null = locked */
+  converted_at: string | null;
   // Joined
   assigned_profile?: Profile;
   lead_photos?: LeadPhoto[];

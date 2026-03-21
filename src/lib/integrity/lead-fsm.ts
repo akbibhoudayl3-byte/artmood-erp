@@ -226,29 +226,21 @@ async function checkAsyncPreConditions(
     }
   }
 
-  // → won: verify lead is not already converted (locked)
-  if (to === 'won') {
+  // ── CONVERSION LOCK: Block ALL transitions on a converted lead ────────────
+  // A lead with converted_at set is permanently locked. No status changes allowed.
+  {
     const { data: lead } = await supabase
       .from('leads')
-      .select('id, project_id')
+      .select('id, project_id, converted_at')
       .eq('id', leadId)
       .single();
 
-    if (lead?.project_id) {
-      violations.push('Ce lead a déjà été converti en projet. Impossible de le modifier.');
-    }
-  }
-
-  // Block any transition on a locked (converted) lead
-  if (from === 'won') {
-    const { data: lead } = await supabase
-      .from('leads')
-      .select('id, project_id')
-      .eq('id', leadId)
-      .single();
-
-    if (lead?.project_id) {
-      violations.push('Ce lead est verrouillé après conversion en projet. Aucune modification possible.');
+    if (lead?.converted_at || lead?.project_id) {
+      violations.push(
+        'Ce lead est verrouillé après conversion en projet. Aucune modification de statut possible. ' +
+        'Consultez le projet associé pour toute modification.'
+      );
+      return violations; // Early return — no point checking further
     }
   }
 

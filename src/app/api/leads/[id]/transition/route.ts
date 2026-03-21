@@ -74,12 +74,24 @@ export async function POST(
   // ── Fetch current lead ──────────────────────────────────────────────────
   const { data: lead, error: fetchErr } = await ctx.supabase
     .from('leads')
-    .select('id, status, full_name, project_id')
+    .select('id, status, full_name, project_id, converted_at')
     .eq('id', leadId)
     .single();
 
   if (fetchErr || !lead) {
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+  }
+
+  // ── CONVERSION LOCK: Reject all transitions on converted leads ──────────
+  if (lead.converted_at || lead.project_id) {
+    return NextResponse.json(
+      {
+        error: 'Lead verrouillé',
+        message: 'Ce lead a été converti en projet et est désormais en lecture seule. Aucune modification de statut possible.',
+        project_id: lead.project_id,
+      },
+      { status: 422 },
+    );
   }
 
   const fromStatus = lead.status as LeadStatus;
