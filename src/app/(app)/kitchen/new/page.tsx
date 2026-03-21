@@ -319,7 +319,6 @@ export default function KitchenPipelinePage() {
       );
       setCost(data.cost);
       setBom(data.bom);
-      setStep(8);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Error');
     } finally {
@@ -327,13 +326,20 @@ export default function KitchenPipelinePage() {
     }
   }, [kitchenId]);
 
+  // Auto-compute price when entering step 7
+  useEffect(() => {
+    if (step === 7 && !cost && !loading) {
+      computePrice();
+    }
+  }, [step, cost, loading, computePrice]);
+
   const runValidation = useCallback(async () => {
     if (!kitchenId) return;
     setLoading(true);
     try {
       const data = await api<{ validation: ValidationResult }>('/api/kitchen/validate', { kitchen_id: kitchenId });
       setValidation(data.validation);
-      setStep(9);
+      setStep(8);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Error');
     } finally {
@@ -423,7 +429,7 @@ export default function KitchenPipelinePage() {
             {kitchenId ? `Cuisine — ${kitchen.client_name}` : 'Nouvelle Cuisine'}
           </h1>
           <p className="text-sm text-[#64648B]">
-            Étape {step}/9 — {PIPELINE_STEPS[step - 1]?.label}
+            Étape {step}/{PIPELINE_STEPS.length} — {PIPELINE_STEPS[step - 1]?.label}
           </p>
         </div>
       </div>
@@ -842,84 +848,107 @@ export default function KitchenPipelinePage() {
         </Card>
       )}
 
-      {/* ── STEP 7: Prix ── */}
+      {/* ── STEP 7: Pricing Screen ── */}
       {step === 7 && (
-        <Card>
-          <CardContent className="space-y-4 pt-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Prix</h2>
-                <p className="text-xs text-[#64648B]">Calcul automatique du prix</p>
-              </div>
-              <button onClick={() => setStep(6)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
-            </div>
-            <Button onClick={computePrice} loading={loading} fullWidth size="lg" variant="accent">
-              Continuer <ArrowRight className="w-4 h-4" />
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          {/* Loading state */}
+          {loading && !cost && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <div className="animate-pulse space-y-3">
+                  <div className="h-8 w-48 bg-[#E8E5E0] rounded-lg mx-auto" />
+                  <div className="h-4 w-32 bg-[#E8E5E0] rounded mx-auto" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {cost && (
+            <>
+              {/* Hero price */}
+              <Card>
+                <CardContent className="pt-8 pb-6 text-center">
+                  <p className="text-xs uppercase tracking-widest text-[#64648B] mb-2">Votre cuisine sur mesure</p>
+                  <p className="text-4xl font-bold text-[#1a1a2e] tracking-tight">{formatMAD(cost.total_ttc)}</p>
+                  <p className="text-xs text-[#64648B] mt-1">TTC · TVA incluse</p>
+                </CardContent>
+              </Card>
+
+              {/* Market anchor */}
+              <Card>
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-[#64648B]">Cuisine équivalente marché</span>
+                    <span className="text-[#64648B] line-through">{formatMAD(roundMoney(cost.total_ttc * 1.4))}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm mt-1">
+                    <span className="font-semibold text-[#1a1a2e]">Votre prix</span>
+                    <span className="font-bold text-[#C9956B]">{formatMAD(cost.total_ttc)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Simple breakdown */}
+              <Card>
+                <CardContent className="py-4 space-y-3">
+                  <p className="text-xs uppercase tracking-widest text-[#64648B]">Détail</p>
+                  <div className="space-y-2">
+                    {[
+                      { label: 'Matériaux', value: cost.materials + cost.accessories },
+                      { label: 'Quincaillerie', value: cost.hardware },
+                      { label: 'Fabrication', value: cost.labour + cost.fixed_charges },
+                      { label: 'Installation', value: cost.installation + cost.transport },
+                    ].map(row => (
+                      <div key={row.label} className="flex items-center justify-between">
+                        <span className="text-sm text-[#64648B]">{row.label}</span>
+                        <span className="text-sm font-medium text-[#1a1a2e]">{formatMAD(roundMoney(row.value * (1 + cost.margin_percent / 100) * 1.2))}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-t border-[#E8E5E0] pt-2 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-[#1a1a2e]">Total</span>
+                    <span className="text-sm font-bold text-[#C9956B]">{formatMAD(cost.total_ttc)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Value justification */}
+              <Card>
+                <CardContent className="py-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    {[
+                      { title: 'Sur mesure', sub: 'Dimensions exactes' },
+                      { title: 'Fabrication CNC', sub: 'Précision industrielle' },
+                      { title: 'Finition premium', sub: 'Qualité garantie' },
+                    ].map(v => (
+                      <div key={v.title}>
+                        <p className="text-xs font-semibold text-[#1a1a2e]">{v.title}</p>
+                        <p className="text-[10px] text-[#64648B] mt-0.5">{v.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* CTA */}
+              <Button onClick={async () => { await runValidation(); }} loading={loading} fullWidth size="lg" variant="accent">
+                Valider et lancer production <ArrowRight className="w-4 h-4" />
+              </Button>
+            </>
+          )}
+        </div>
       )}
 
-      {/* ── STEP 8: Validation ── */}
+      {/* ── STEP 8: Final Actions ── */}
       {step === 8 && (
         <Card>
           <CardContent className="space-y-4 pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Récap</h2>
-                <p className="text-xs text-[#64648B]">Vérifiez les coûts détaillés</p>
+                <h2 className="text-base font-bold text-[#1a1a2e]">Confirmation</h2>
+                <p className="text-xs text-[#64648B]">Votre cuisine est prête</p>
               </div>
               <button onClick={() => setStep(7)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
-            </div>
-            {cost && (
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-[#64648B]">Matériaux</span><span className="text-right font-medium">{formatMAD(cost.materials)}</span>
-                  <span className="text-[#64648B]">Quincaillerie</span><span className="text-right font-medium">{formatMAD(cost.hardware)}</span>
-                  <span className="text-[#64648B]">Accessoires</span><span className="text-right font-medium">{formatMAD(cost.accessories)}</span>
-                  <span className="text-[#64648B]">Main d&apos;oeuvre</span><span className="text-right font-medium">{formatMAD(cost.labour)}</span>
-                  <span className="text-[#64648B]">Charges fixes</span><span className="text-right font-medium">{formatMAD(cost.fixed_charges)}</span>
-                  <span className="text-[#64648B]">Transport</span><span className="text-right font-medium">{formatMAD(cost.transport)}</span>
-                  <span className="text-[#64648B]">Installation</span><span className="text-right font-medium">{formatMAD(cost.installation)}</span>
-                </div>
-                <div className="border-t border-[#E8E5E0] pt-2 grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-[#64648B]">Sous-total</span><span className="text-right font-medium">{formatMAD(cost.subtotal)}</span>
-                  <span className="text-[#64648B]">Marge ({cost.margin_percent}%)</span><span className="text-right font-medium">{formatMAD(cost.margin_amount)}</span>
-                  <span className="text-[#64648B]">Total HT</span><span className="text-right font-semibold">{formatMAD(cost.total_ht)}</span>
-                  <span className="text-[#64648B]">TVA (20%)</span><span className="text-right font-medium">{formatMAD(cost.vat_amount)}</span>
-                </div>
-                <div className="border-t-2 border-[#1B2A4A] pt-2 grid grid-cols-2 text-base">
-                  <span className="font-bold text-[#1a1a2e]">Total TTC</span>
-                  <span className="text-right font-bold text-[#C9956B]">{formatMAD(cost.total_ttc)}</span>
-                </div>
-              </div>
-            )}
-
-            {bom && (
-              <div className="text-xs text-[#64648B] grid grid-cols-3 gap-2 bg-[#FAFAF8] rounded-lg p-3">
-                <div><strong>{bom.panels.length}</strong> panneaux</div>
-                <div><strong>{roundMoney(bom.edge_banding.reduce((s, e) => s + e.length_m, 0))}m</strong> chant</div>
-                <div><strong>{bom.hardware.reduce((s, h) => s + h.qty, 0)}</strong> quincaillerie</div>
-              </div>
-            )}
-
-            <Button onClick={runValidation} loading={loading} fullWidth size="lg">
-              Valider <ArrowRight className="w-4 h-4" />
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── STEP 9: Actions ── */}
-      {step === 9 && (
-        <Card>
-          <CardContent className="space-y-4 pt-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-[#1a1a2e]">Valider</h2>
-                <p className="text-xs text-[#64648B]">Confirmez votre cuisine</p>
-              </div>
-              <button onClick={() => setStep(8)} className="text-xs text-[#C9956B] hover:underline">Modifier</button>
             </div>
 
             {validation && (
@@ -927,20 +956,24 @@ export default function KitchenPipelinePage() {
                 validation.overall === 'green' ? 'bg-emerald-50 text-emerald-700' :
                 'bg-amber-50 text-amber-700'
               }`}>
-                {validation.overall === 'green' ? 'Votre cuisine est optimisée' : 'Ajustements nécessaires'}
+                {validation.overall === 'green' ? 'Cuisine optimisée' : 'Ajustements possibles'}
+              </div>
+            )}
+
+            {cost && (
+              <div className="text-center py-2">
+                <p className="text-2xl font-bold text-[#1a1a2e]">{formatMAD(cost.total_ttc)}</p>
               </div>
             )}
 
             <div className="grid grid-cols-1 gap-3">
-              <Button onClick={saveDraft} loading={loading} variant="secondary" fullWidth size="lg">
-                <Save className="w-4 h-4" /> Sauvegarder Brouillon
+              <Button onClick={markValidated} loading={loading} variant="accent" fullWidth size="lg">
+                <Send className="w-4 h-4" /> Lancer production
               </Button>
 
-              {validation?.can_generate_quote !== false && (
-                <Button onClick={markValidated} loading={loading} variant="accent" fullWidth size="lg">
-                  <Send className="w-4 h-4" /> Valider & Générer Devis
-                </Button>
-              )}
+              <Button onClick={saveDraft} loading={loading} variant="secondary" fullWidth size="lg">
+                <Save className="w-4 h-4" /> Sauvegarder brouillon
+              </Button>
             </div>
           </CardContent>
         </Card>

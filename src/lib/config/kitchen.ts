@@ -115,6 +115,7 @@ export const PIPELINE_STEPS = [
   { step: 3, key: 'style',    label: 'Style',           labelAr: 'الستيل' },
   { step: 4, key: 'custom',   label: 'Personnaliser',   labelAr: 'تخصيص' },
   { step: 5, key: 'check',    label: 'Vérification',    labelAr: 'التحقق' },
-  { step: 6, key: 'price',    label: 'Prix',            labelAr: 'الثمن' },
-  { step: 7, key: 'finish',   label: 'Terminer',        labelAr: 'إنهاء' },
+  { step: 6, key: 'price',    label: 'Validation',      labelAr: 'التحقق' },
+  { step: 7, key: 'pricing',  label: 'Prix',            labelAr: 'الثمن' },
+  { step: 8, key: 'finish',   label: 'Confirmation',    labelAr: 'تأكيد' },
 ] as const;
