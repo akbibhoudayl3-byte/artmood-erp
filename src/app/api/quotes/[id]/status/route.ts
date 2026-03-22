@@ -47,7 +47,7 @@ export async function PATCH(
   // Fetch current quote
   const { data: quote, error: fetchErr } = await supabase
     .from('quotes')
-    .select('id, status, project_id, total_amount')
+    .select('id, status, project_id, total_amount, version')
     .eq('id', id)
     .single();
 

@@ -29,6 +29,7 @@ import type { ProjectStatus, Project } from '@/types/crm';
  * or explicitly backwards (to handle corrections / cancellations).
  */
 const FORWARD_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
+  draft:                   ['measurements_confirmed', 'cancelled'],
   measurements_confirmed:  ['design_validated', 'cancelled'],
   design_validated:        ['bom_generated', 'cancelled'],
   bom_generated:           ['ready_for_production', 'cancelled'],
