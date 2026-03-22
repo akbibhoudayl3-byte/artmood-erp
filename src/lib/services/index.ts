@@ -291,10 +291,13 @@ export async function updateProjectStatus(
   projectId: string,
   newStatus: ProjectStatus,
   updatedBy?: string,
+  options?: { role?: string },
 ): Promise<ServiceResult> {
   if (!projectId) return fail('Project ID is required.');
 
-  // Safety check: cannot move to production without deposit
+  const isAdmin = options?.role === 'ceo';
+
+  // Safety check: cannot move to production without deposit (admin can override)
   if (newStatus === 'in_production') {
     const { data: project } = await supabase()
       .from('projects')
@@ -303,7 +306,20 @@ export async function updateProjectStatus(
       .single();
 
     if (!project?.deposit_paid) {
-      return fail('Cannot move to production: 50% deposit has not been paid.');
+      if (isAdmin) {
+        // Log admin override
+        try {
+          await supabase().from('project_events').insert({
+            project_id: projectId,
+            event_type: 'admin_override',
+            description: 'Admin bypassed deposit requirement for production start',
+            new_value: 'in_production',
+            user_id: updatedBy || null,
+          });
+        } catch { /* non-fatal */ }
+      } else {
+        return fail('Cannot move to production: 50% deposit has not been paid.');
+      }
     }
   }
 

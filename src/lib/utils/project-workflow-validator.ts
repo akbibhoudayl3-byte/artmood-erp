@@ -123,10 +123,13 @@ export function validateTransitionRequirements(
   context?: {
     /** Names of stock items at zero quantity (fetched externally) */
     criticalStockItemNames?: string[];
+    /** User role — 'ceo' bypasses deposit hard-block */
+    role?: string;
   },
 ): TransitionValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const isAdmin = context?.role === 'ceo';
 
   // Self-transition
   if (project.status === targetStatus) {
@@ -136,9 +139,13 @@ export function validateTransitionRequirements(
 
   // ── Production gate ──────────────────────────────────────────────────
   if (targetStatus === 'in_production') {
-    // Hard blocker: deposit must be paid
+    // Hard blocker: deposit must be paid (admin can override)
     if (!project.deposit_paid) {
-      errors.push('50% deposit has not been paid. Please collect the deposit first.');
+      if (isAdmin) {
+        warnings.push('Admin override: deposit not paid — proceeding anyway.');
+      } else {
+        errors.push('50% deposit has not been paid. Please collect the deposit first.');
+      }
     }
 
     // Soft warnings (CEO can override)

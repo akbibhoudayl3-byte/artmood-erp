@@ -87,8 +87,11 @@ function checkSyncPreConditions(
     measurement_date?: string | null;
     measured_by?: string | null;
   },
-): string[] {
+  options?: { role?: string },
+): { violations: string[]; overrides: string[] } {
   const violations: string[] = [];
+  const overrides: string[] = [];
+  const isAdmin = options?.role === 'ceo';
 
   if (to === 'measurements_confirmed') {
     // Either internal measurement done OR handled via async check for external plan
@@ -113,13 +116,17 @@ function checkSyncPreConditions(
       );
     }
     if (!project.deposit_paid) {
-      violations.push(
-        'L\'acompte (50%) doit être payé avant de passer en production.'
-      );
+      if (isAdmin) {
+        overrides.push('Admin override: deposit not paid — bypassed for production.');
+      } else {
+        violations.push(
+          'L\'acompte (50%) doit être payé avant de passer en production.'
+        );
+      }
     }
   }
 
-  return violations;
+  return { violations, overrides };
 }
 
 /**
@@ -317,8 +324,12 @@ export async function validateProjectTransition(params: {
     lead_id?: string | null;
   };
   supabase: SupabaseClient;
+  /** User role — 'ceo' bypasses deposit requirement */
+  role?: string;
+  /** User ID for audit logging */
+  userId?: string;
 }): Promise<ProjectTransitionResult> {
-  const { from, to, projectId, project, supabase } = params;
+  const { from, to, projectId, project, supabase, role, userId } = params;
 
   // 1. FSM edge check — NO skipping, NO backward
   if (!isValidProjectTransition(from, to)) {
@@ -344,7 +355,7 @@ export async function validateProjectTransition(params: {
   }
 
   // 2. Sync pre-conditions
-  const syncViolations = checkSyncPreConditions(to, project);
+  const { violations: syncViolations, overrides } = checkSyncPreConditions(to, project, { role });
 
   // 3. Async pre-conditions
   const asyncViolations = await checkAsyncPreConditions(to, projectId, supabase, project);
@@ -357,6 +368,19 @@ export async function validateProjectTransition(params: {
       reason: allViolations[0],
       violations: allViolations,
     };
+  }
+
+  // 4. Log admin overrides
+  if (overrides.length > 0) {
+    try {
+      await supabase.from('project_events').insert({
+        project_id: projectId,
+        event_type: 'admin_override',
+        description: overrides.join('; '),
+        new_value: to,
+        user_id: userId || null,
+      });
+    } catch { /* non-fatal */ }
   }
 
   return { allowed: true };
@@ -378,6 +402,8 @@ export async function guardProjectTransition(params: {
     lead_id?: string | null;
   };
   supabase: SupabaseClient;
+  role?: string;
+  userId?: string;
 }): Promise<null | NextResponse> {
   const result = await validateProjectTransition(params);
   if (result.allowed) return null;
