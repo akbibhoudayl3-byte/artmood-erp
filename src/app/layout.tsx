@@ -1,5 +1,15 @@
 import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
 import './globals.css';
+
+const inter = localFont({
+  src: [
+    { path: './fonts/inter.woff2', weight: '100 900', style: 'normal' },
+  ],
+  variable: '--font-inter',
+  fallback: ['system-ui', 'Arial', 'sans-serif'],
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'ArtMood Factory OS',
@@ -37,7 +47,7 @@ export default function RootLayout({
           } catch(e) {}
         ` }} />
       </head>
-      <body className="font-sans antialiased">
+      <body className={`${inter.className} antialiased`}>
         {children}
       </body>
     </html>
