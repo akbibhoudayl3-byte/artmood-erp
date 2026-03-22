@@ -119,6 +119,7 @@ function checkSyncPreConditions(
       if (isAdmin) {
         overrides.push('Admin override: deposit not paid — bypassed for production.');
       } else {
+        // Non-admin: will be checked async (approved exception can bypass)
         violations.push(
           'L\'acompte (50%) doit être payé avant de passer en production.'
         );
@@ -360,7 +361,23 @@ export async function validateProjectTransition(params: {
   // 3. Async pre-conditions
   const asyncViolations = await checkAsyncPreConditions(to, projectId, supabase, project);
 
-  const allViolations = [...syncViolations, ...asyncViolations];
+  let allViolations = [...syncViolations, ...asyncViolations];
+
+  // 4. Check for approved exception — if non-admin, deposit violation can be bypassed
+  if (to === 'ready_for_production' && role !== 'ceo' && allViolations.some(v => v.includes('acompte'))) {
+    const { data: approved } = await supabase
+      .from('project_exceptions')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('requested_stage', 'in_production')
+      .eq('status', 'approved')
+      .limit(1);
+
+    if (approved && approved.length > 0) {
+      allViolations = allViolations.filter(v => !v.includes('acompte'));
+      overrides.push('Approved exception: deposit bypass granted by CEO.');
+    }
+  }
 
   if (allViolations.length > 0) {
     return {

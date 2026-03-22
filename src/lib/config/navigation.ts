@@ -42,6 +42,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
     { label: 'Surveys', href: '/surveys', icon: 'Star', i18nKey: 'nav.surveys' },
     { label: 'Maintenance', href: '/production/maintenance', icon: 'Wrench', i18nKey: 'nav.maintenance' },
+    { label: 'Exceptions', href: '/projects/exceptions', icon: 'ShieldAlert', i18nKey: 'nav.exceptions' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   commercial_manager: [
@@ -157,6 +158,7 @@ const FULL_SIDEBAR: NavGroup[] = [
   ]},
   { label: 'Projects', i18nKey: 'nav.group_projects', items: [
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+    { label: 'Exceptions', href: '/projects/exceptions', icon: 'ShieldAlert', i18nKey: 'nav.exceptions' },
     { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
   ]},

@@ -383,7 +383,7 @@ export default function ProjectDetailPage() {
             {showDepositException && profile?.role !== 'ceo' && (
               <button
                 onClick={() => {
-                  setExceptionForm({ reason: '', urgency: 'normal', note: '' });
+                  setExceptionForm({ reason: '', note: '' });
                   setShowExceptionModal(true);
                 }}
                 className="mt-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors"

@@ -3,6 +3,9 @@
  *
  * CEO approves or rejects a deposit-exception request.
  * Body: { action: 'approve' | 'reject' }
+ *
+ * Approve → project transitions to in_production, logs exception_approved
+ * Reject  → project stays blocked, logs exception_rejected
  */
 
 import { NextResponse } from 'next/server';
@@ -13,6 +16,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // Only CEO (admin) can approve/reject
   const ctx = await guard(['ceo']);
   if (ctx instanceof NextResponse) return ctx;
 
@@ -28,10 +32,10 @@ export async function PATCH(
 
   const action = body?.action;
   if (action !== 'approve' && action !== 'reject') {
-    return NextResponse.json({ error: 'action must be approve or reject' }, { status: 400 });
+    return NextResponse.json({ error: 'action must be "approve" or "reject"' }, { status: 400 });
   }
 
-  // Fetch request + project
+  // Fetch the exception request + its project
   const { data: exReq, error: fetchErr } = await ctx.supabase
     .from('project_exceptions')
     .select('*, project:projects(id, status, client_name, reference_code)')
@@ -47,15 +51,20 @@ export async function PATCH(
 
   const project = exReq.project;
   const now = new Date().toISOString();
+  const newStatus = action === 'approve' ? 'approved' : 'rejected';
 
-  // Update exception status
-  await ctx.supabase
+  // Update exception record
+  const { error: updateErr } = await ctx.supabase
     .from('project_exceptions')
-    .update({ status: action === 'approve' ? 'approved' : 'rejected', reviewed_by: ctx.userId, reviewed_at: now })
+    .update({ status: newStatus, reviewed_by: ctx.userId, reviewed_at: now })
     .eq('id', requestId);
 
+  if (updateErr) {
+    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  }
+
   if (action === 'approve') {
-    // Transition project to in_production
+    // Transition project → in_production
     await ctx.supabase.from('projects').update({
       status: 'in_production',
       status_updated_at: now,
@@ -70,18 +79,7 @@ export async function PATCH(
       event_type: 'exception_approved',
       old_value: project.status,
       new_value: 'in_production',
-      description: `Exception approuvée — projet passe en production (bypass acompte)`,
-    });
-
-    // Notify requester
-    await ctx.supabase.from('notifications').insert({
-      user_id: exReq.requested_by,
-      title: `Exception approuvée — ${project.reference_code}`,
-      body: `${project.client_name} passe en production.`,
-      type: 'exception_approved',
-      severity: 'info',
-      reference_type: 'project',
-      reference_id: project.id,
+      description: `Exception approuvée — bypass acompte. Projet passe en production.`,
     });
   } else {
     // Log rejection
@@ -89,24 +87,13 @@ export async function PATCH(
       project_id: project.id,
       user_id: ctx.userId,
       event_type: 'exception_rejected',
-      description: `Exception rejetée — acompte 50% requis`,
-    });
-
-    // Notify requester
-    await ctx.supabase.from('notifications').insert({
-      user_id: exReq.requested_by,
-      title: `Exception rejetée — ${project.reference_code}`,
-      body: `L'acompte de 50% reste requis pour ${project.client_name}.`,
-      type: 'exception_rejected',
-      severity: 'warning',
-      reference_type: 'project',
-      reference_id: project.id,
+      description: `Exception rejetée — acompte 50% toujours requis.`,
     });
   }
 
   return NextResponse.json({
     ok: true,
-    action: action === 'approve' ? 'approved' : 'rejected',
+    action: newStatus,
     project_id: project.id,
   });
 }
