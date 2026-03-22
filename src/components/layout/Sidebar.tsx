@@ -7,7 +7,7 @@ import {
   Calendar, CalendarOff, Wrench, UserCheck, Megaphone, Settings, FileText,
   ClipboardList, ScanLine, X, Truck, ShoppingCart, AlertTriangle, PieChart,
   Monitor, Star, LogOut, MessageCircle, Clock, BarChart2, BookOpen,
-  Layers, BarChart3, Scissors, Upload
+  Layers, BarChart3, Scissors, Upload, ChefHat
 } from 'lucide-react';
 import { NAV_GROUPS } from '@/lib/constants';
 import { useLocale } from '@/lib/hooks/useLocale';
@@ -19,7 +19,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Calendar, CalendarOff, Wrench, UserCheck, Megaphone, Settings, FileText,
   ClipboardList, ScanLine, Truck, ShoppingCart, AlertTriangle, PieChart,
   Monitor, Star, MessageCircle, Clock, BarChart2, BookOpen,
-  Layers, BarChart3, Scissors, Upload,
+  Layers, BarChart3, Scissors, Upload, ChefHat,
 };
 
 interface SidebarProps {

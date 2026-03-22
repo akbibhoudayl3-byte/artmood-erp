@@ -87,6 +87,7 @@ export interface Project {
   estimated_production_end: string | null;
   estimated_installation_date: string | null;
   actual_delivery_date: string | null;
+  cutting_method?: 'saw' | 'cnc';
   notes: string | null;
   created_by: string | null;
   created_at: string;
@@ -137,6 +138,12 @@ export interface Quote {
   responded_at: string | null;
   created_at: string;
   updated_at: string;
+  // Cost Engine fields
+  margin_override?: boolean;
+  margin_override_by?: string | null;
+  margin_override_reason?: string | null;
+  is_auto_generated?: boolean;
+  cost_snapshot?: Record<string, number> | null;
   quote_lines?: QuoteLine[];
   project?: Project;
 }

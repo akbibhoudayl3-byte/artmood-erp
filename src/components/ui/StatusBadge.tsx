@@ -118,6 +118,17 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
   transport: { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-500' },
   subcontract: { bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-500' },
   overhead: { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-500' },
+  // SAV
+  open: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' },
+  planned: { bg: 'bg-violet-50', text: 'text-violet-700', dot: 'bg-violet-500' },
+  resolved: { bg: 'bg-teal-50', text: 'text-teal-700', dot: 'bg-teal-500' },
+  closed: { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' },
+  hinge_problem: { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-500' },
+  drawer_problem: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
+  door_alignment: { bg: 'bg-yellow-50', text: 'text-yellow-700', dot: 'bg-yellow-500' },
+  damaged_panel: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500' },
+  installation_correction: { bg: 'bg-indigo-50', text: 'text-indigo-700', dot: 'bg-indigo-500' },
+  under_warranty: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500' },
   // PO statuses
   confirmed: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' },
   received: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500' },
@@ -139,7 +150,7 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-const PULSE_STATUSES = new Set(['in_progress', 'needs_maintenance', 'issue_reported', 'bounced', 'urgent', 'critical']);
+const PULSE_STATUSES = new Set(['in_progress', 'needs_maintenance', 'issue_reported', 'bounced', 'urgent', 'critical', 'open']);
 
 export default function StatusBadge({ status, className = '' }: StatusBadgeProps) {
   const colors = STATUS_COLORS[status] || defaultColors;

@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireRole, isValidUUID } from '@/lib/auth/server';
 import { writeAuditLog } from '@/lib/security/audit';
+import { COMPANY, getCompanyHeaderHtml, getLegalFooterHtml } from '@/lib/config/company';
 
 /** Escape HTML to prevent XSS */
 function esc(str: string | null | undefined): string {
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
 <body>
   <div class="header">
     <div>
-      <div class="logo">ArtMood <span>Factory OS</span></div>
+      <div class="logo">${COMPANY.name}</div>
       <div class="doc-title">Bon de Livraison</div>
     </div>
     <div style="text-align:right;">
@@ -119,7 +120,7 @@ export async function GET(request: NextRequest) {
       <td style="text-align:right;background:${remaining > 0 ? '#dc2626' : '#16a34a'}">${remaining.toLocaleString('fr-MA')} MAD</td>
     </tr>
   </table>
-  <div class="footer">ArtMood Factory OS · Document généré automatiquement · ${new Date().toISOString()}</div>
+  <div class="footer">${COMPANY.name} — ${COMPANY.fullAddress} — RC: ${COMPANY.rc} — ICE: ${COMPANY.ice}</div>
 </body>
 </html>`;
 

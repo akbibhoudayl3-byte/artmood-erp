@@ -141,6 +141,7 @@ export async function recordStockMovement(payload: StockMovementPayload): Promis
     stock_item_id: payload.stock_item_id,
     movement_type: dbMovType,
     quantity: signedQty,
+    unit: item.unit || 'unit',
     notes: payload.notes || null,
     created_by: payload.created_by || null,
     reference_type: payload.reference_type || null,

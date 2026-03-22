@@ -7,6 +7,7 @@
 import { createClient } from '@/lib/supabase/client';
 import type { ServiceResult } from './index';
 import type { ProductionOrder, ProductionOrderStatus } from '@/types/database';
+import { generateTasksForOrder } from './task.service';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -151,6 +152,15 @@ export async function updateOrderStatus(
 
   if (status === 'in_progress') {
     updates.started_at = new Date().toISOString();
+    // Auto-generate workflow tasks when order starts
+    const order = await supabase()
+      .from('production_orders')
+      .select('project_id')
+      .eq('id', orderId)
+      .single();
+    if (order.data?.project_id) {
+      generateTasksForOrder(orderId, order.data.project_id).catch(() => {});
+    }
   }
   if (status === 'completed') {
     updates.completed_at = new Date().toISOString();

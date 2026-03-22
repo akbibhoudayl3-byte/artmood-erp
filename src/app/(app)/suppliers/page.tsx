@@ -11,6 +11,8 @@ import { Textarea } from '@/components/ui/Input';
 import type { Supplier } from '@/types/database';
 import { Truck, Plus, Search, Phone, Mail, MapPin, X, Edit2, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
 
 export default function SuppliersPage() {
   const { profile } = useAuth();
@@ -25,6 +27,7 @@ export default function SuppliersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const confirm = useConfirmDialog();
 
   // Form
   const [name, setName] = useState('');
@@ -117,17 +120,25 @@ export default function SuppliersPage() {
     setSaving(false);
   }
 
-  async function deleteSupplier(s: Supplier) {
-    if (!confirm(`Deactivate "${s.name}"? They will no longer appear in the list.`)) return;
-    const { error: delErr } = await supabase
-      .from('suppliers')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('id', s.id);
-    if (delErr) {
-      setError('Failed to deactivate supplier: ' + delErr.message);
-    } else {
-      loadSuppliers();
-    }
+  function deleteSupplier(s: Supplier) {
+    confirm.open({
+      title: 'Deactivate Supplier',
+      message: `Deactivate "${s.name}"? They will no longer appear in the list.`,
+      onConfirm: async () => {
+        const { error: delErr } = await supabase
+          .from('suppliers')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('id', s.id);
+        if (delErr) {
+          setError('Failed to deactivate supplier: ' + delErr.message);
+        } else {
+          setError('');
+          setSuccessMsg('Supplier deactivated.');
+          setTimeout(() => setSuccessMsg(''), 3000);
+          loadSuppliers();
+        }
+      },
+    });
   }
 
   const filtered = suppliers.filter(s =>
@@ -246,7 +257,7 @@ export default function SuppliersPage() {
                   <Button variant="secondary" className="flex-1" onClick={resetForm}>
                     {t('common.cancel')}
                   </Button>
-                  <Button className="flex-1" onClick={saveSupplier} disabled={saving || !name.trim()}>
+                  <Button className="flex-1" onClick={saveSupplier} disabled={saving}>
                     {saving ? 'Saving...' : editingId ? t('common.save') : t('suppliers.add_supplier')}
                   </Button>
                 </div>
@@ -316,6 +327,16 @@ export default function SuppliersPage() {
             <p className="text-[#64648B]">{t('common.no_results')}</p>
           </div>
         )}
+
+        <ConfirmDialog
+          isOpen={confirm.isOpen}
+          onClose={confirm.close}
+          onConfirm={confirm.confirm}
+          title={confirm.title}
+          message={confirm.message}
+          variant="danger"
+          loading={confirm.loading}
+        />
       </div>
     </RoleGuard>
   );

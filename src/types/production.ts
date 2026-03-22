@@ -361,3 +361,166 @@ export interface ProductionMaterialUsage {
   material?: { name: string; unit: string; cost_per_unit: number | null };
   worker?: { full_name: string };
 }
+
+// ============================================================
+// Cutting Jobs & Nesting
+// ============================================================
+
+export type CuttingJobStatus = 'draft' | 'nesting' | 'nested' | 'cutting' | 'done';
+
+export interface CuttingJob {
+  id: string;
+  project_id: string;
+  status: CuttingJobStatus;
+  total_parts: number;
+  total_panels: number;
+  total_waste_pct: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined
+  project?: { reference_code: string; client_name: string };
+  panels?: CuttingPanel[];
+  cnc_count?: number;
+}
+
+export interface CuttingPanel {
+  id: string;
+  cutting_job_id: string;
+  material_code: string;
+  thickness_mm: number;
+  sheet_width_mm: number;
+  sheet_height_mm: number;
+  panel_index: number;
+  used_area_mm2: number;
+  waste_area_mm2: number;
+  waste_percent: number;
+  created_at: string;
+  // Joined
+  placements?: PanelPlacement[];
+  cnc_program?: CncProgram;
+}
+
+export interface PanelPlacement {
+  id: string;
+  cutting_panel_id: string;
+  project_part_id: string;
+  x_mm: number;
+  y_mm: number;
+  width_mm: number;
+  height_mm: number;
+  rotated: boolean;
+  part_label: string;
+  created_at: string;
+}
+
+export interface CncProgram {
+  id: string;
+  project_id: string;
+  cutting_job_id: string;
+  cutting_panel_id: string;
+  file_name: string;
+  file_content: string;
+  format: string;
+  created_at: string;
+}
+
+// ============================================================
+// SAW Workflow (Scie Panneaux)
+// ============================================================
+
+export interface SawStripPart {
+  partId: string;
+  label: string;
+  width: number;
+  height: number;
+  crossX: number;
+  rotated: boolean;
+  edgeTop?: boolean;
+  edgeBottom?: boolean;
+  edgeLeft?: boolean;
+  edgeRight?: boolean;
+}
+
+export interface SawStrip {
+  stripIndex: number;
+  ripY: number;
+  stripHeight: number;
+  parts: SawStripPart[];
+  wasteWidth: number;
+}
+
+export interface SawNestingResult {
+  id: string;
+  project_id: string;
+  material_code: string;
+  thickness_mm: number;
+  sheet_width_mm: number;
+  sheet_height_mm: number;
+  sheet_index: number;
+  strips: SawStrip[];
+  used_area_mm2: number;
+  waste_area_mm2: number;
+  waste_percent: number;
+  created_at: string;
+}
+
+// ============================================================
+// Production Workflow Engine
+// ============================================================
+
+export type TaskStatus = 'pending' | 'in_progress' | 'paused' | 'completed' | 'blocked' | 'rework_sent';
+export type QCResult = 'approved' | 'rework_required' | 'rejected';
+
+export interface ProductionStationRow {
+  id: string;
+  name: string;
+  code: string;
+  legacy_code: string | null;
+  order_index: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ProductionTask {
+  id: string;
+  production_order_id: string;
+  project_id: string | null;
+  station_id: string;
+  assigned_to: string | null;
+  status: TaskStatus;
+  qc_result: QCResult | null;
+  rework_target_station_id: string | null;
+  rework_from_task_id: string | null;
+  rework_count: number;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_minutes: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskBoardItem {
+  id: string;
+  production_order_id: string;
+  project_id: string | null;
+  station_id: string;
+  station_code: string;
+  station_name: string;
+  order_index: number;
+  assigned_to: string | null;
+  assignee_name: string | null;
+  status: TaskStatus;
+  qc_result: QCResult | null;
+  rework_count: number;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_minutes: number | null;
+  notes: string | null;
+  created_at: string;
+  order_name: string | null;
+  order_status: string;
+  client_name: string | null;
+  reference_code: string | null;
+}

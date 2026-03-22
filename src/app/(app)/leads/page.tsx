@@ -1,44 +1,49 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useLocale } from '@/lib/hooks/useLocale';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import EmptyState from '@/components/ui/EmptyState';
 import { LEAD_STAGES } from '@/lib/constants';
-import type { Lead, LeadStatus } from '@/types/database';
-import { Plus, Search, Phone, MapPin, LayoutGrid, List } from 'lucide-react';
+import type { Lead } from '@/types/database';
+import { Plus, Search, Phone, MapPin, LayoutGrid, List, Users } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import { loadLeads as loadLeadsSvc } from '@/lib/services/lead.service';
 
 export default function LeadsPage() {
   const { profile, canManageLeads } = useAuth();
   const router = useRouter();
   const { t } = useLocale();
-  const supabase = createClient();
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [view, setView] = useState<'list' | 'kanban'>('kanban');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  useEffect(() => { loadLeads(); }, []);
-
-  async function loadLeads() {
-    let query = supabase.from('leads').select('*, assigned_profile:profiles!leads_assigned_to_fkey(full_name)')
-      .order('created_at', { ascending: false });
-
-    if (profile?.role === 'community_manager') {
-      query = query.eq('created_by', profile.id);
+  const fetchLeads = useCallback(async () => {
+    setLoading(true);
+    const res = await loadLeadsSvc({
+      role: profile?.role,
+      userId: profile?.id,
+    });
+    if (res.success) {
+      setLeads(res.data || []);
+    } else {
+      setErrorMsg(res.error || 'Failed to load leads');
     }
-
-    const { data } = await query;
-    setLeads(data || []);
     setLoading(false);
-  }
+  }, [profile?.role, profile?.id]);
+
+  useEffect(() => {
+    if (profile) fetchLeads();
+  }, [fetchLeads, profile]);
 
   const filtered = leads.filter(l => {
     const matchSearch = !search ||
@@ -67,6 +72,9 @@ export default function LeadsPage() {
   return (
     <RoleGuard allowedRoles={['ceo', 'commercial_manager', 'community_manager'] as any[]}>
     <div className="space-y-5">
+      {/* Banners */}
+      <ErrorBanner message={errorMsg} type="error" onDismiss={() => setErrorMsg(null)} />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -183,7 +191,16 @@ export default function LeadsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0EDE8]">
-                {filtered.map((lead) => (
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState
+                        icon={<Users size={32} className="opacity-30" />}
+                        title={t('common.no_results') || 'No leads found'}
+                      />
+                    </td>
+                  </tr>
+                ) : filtered.map((lead) => (
                   <tr
                     key={lead.id}
                     className="hover:bg-[#FAFAF8] cursor-pointer"

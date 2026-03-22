@@ -50,6 +50,18 @@ export interface CreatePaymentData {
   received_by?: string;
 }
 
+// ── Financial Status ──────────────────────────────────────────────────────
+
+export interface ProjectFinancialStatus {
+  project_id: string;
+  total_amount: number;
+  paid_amount: number;
+  remaining: number;
+  overpayment: number;
+  is_fully_paid: boolean;
+  max_allowed: number; // maximum new payment amount
+}
+
 // ── Service Functions ──────────────────────────────────────────────────────
 
 /**
@@ -68,13 +80,14 @@ export async function loadPayments(): Promise<ServiceResult<PaymentWithProject[]
 
 /**
  * Load active projects for the payment form dropdown.
+ * Now includes total_amount and paid_amount for financial validation.
  */
 export async function loadActiveProjects(): Promise<
-  ServiceResult<{ id: string; client_name: string; reference_code: string }[]>
+  ServiceResult<{ id: string; client_name: string; reference_code: string; total_amount: number; paid_amount: number }[]>
 > {
   const { data, error } = await supabase()
     .from('projects')
-    .select('id, client_name, reference_code')
+    .select('id, client_name, reference_code, total_amount, paid_amount')
     .in('status', [
       'measurements',
       'design',
@@ -89,7 +102,51 @@ export async function loadActiveProjects(): Promise<
 }
 
 /**
- * Create a new payment and sync the project's paid_amount.
+ * Get the financial status for a project: paid, remaining, overpayment.
+ * Uses real SUM(payments) not the denormalized paid_amount for integrity.
+ */
+export async function getProjectFinancialStatus(
+  projectId: string,
+): Promise<ServiceResult<ProjectFinancialStatus>> {
+  if (!projectId) return fail('Project ID is required.');
+
+  // Fetch project total
+  const { data: project, error: projErr } = await supabase()
+    .from('projects')
+    .select('total_amount')
+    .eq('id', projectId)
+    .single();
+
+  if (projErr || !project) return fail('Project not found.');
+
+  // SUM all existing payments for this project (source of truth)
+  const { data: payments, error: payErr } = await supabase()
+    .from('payments')
+    .select('amount')
+    .eq('project_id', projectId);
+
+  if (payErr) return fail('Failed to load project payments.');
+
+  const totalAmount = Number(project.total_amount) || 0;
+  const paidAmount = (payments || []).reduce((s, p) => s + Number(p.amount), 0);
+  const remaining = Math.max(0, totalAmount - paidAmount);
+  const overpayment = Math.max(0, paidAmount - totalAmount);
+  const isFullyPaid = totalAmount > 0 && paidAmount >= totalAmount;
+
+  return ok({
+    project_id: projectId,
+    total_amount: totalAmount,
+    paid_amount: paidAmount,
+    remaining,
+    overpayment,
+    is_fully_paid: isFullyPaid,
+    max_allowed: remaining,
+  });
+}
+
+/**
+ * Create a new payment with strict financial validation.
+ * Blocks if project is fully paid or payment would exceed total.
  */
 export async function createPayment(
   data: CreatePaymentData,
@@ -98,6 +155,20 @@ export async function createPayment(
   if (!data.amount || data.amount <= 0)
     return fail('Amount must be greater than zero.');
   if (!data.received_at) return fail('Payment date is required.');
+
+  // ── Financial integrity check ──
+  const statusRes = await getProjectFinancialStatus(data.project_id);
+  if (!statusRes.success || !statusRes.data) return fail(statusRes.error || 'Financial check failed.');
+
+  const fs = statusRes.data;
+  if (fs.total_amount > 0) {
+    if (fs.is_fully_paid) {
+      return fail(`Project already fully paid (${fmtMAD(fs.paid_amount)} / ${fmtMAD(fs.total_amount)}). No further payments allowed.`);
+    }
+    if (data.amount > fs.remaining) {
+      return fail(`Payment of ${fmtMAD(data.amount)} exceeds remaining balance. Maximum allowed: ${fmtMAD(fs.remaining)}.`);
+    }
+  }
 
   const { data: payment, error: insertErr } = await supabase()
     .from('payments')
@@ -123,14 +194,50 @@ export async function createPayment(
 }
 
 /**
- * Update an existing payment. Handles project paid_amount adjustments
- * when the amount or project changes.
+ * Update an existing payment with financial validation.
+ * Ensures the new amount won't cause total_paid > total_amount.
  */
 export async function updatePayment(
   id: string,
   data: Record<string, unknown>,
 ): Promise<ServiceResult> {
   if (!id) return fail('Payment ID is required.');
+
+  const projectId = data.project_id as string;
+  const newAmount = Number(data.amount);
+
+  // ── Financial integrity check for updates ──
+  if (projectId && newAmount > 0) {
+    // Get current payment amount to compute the delta
+    const { data: currentPayment } = await supabase()
+      .from('payments')
+      .select('amount, project_id')
+      .eq('id', id)
+      .single();
+
+    if (currentPayment) {
+      const oldAmount = Number(currentPayment.amount);
+      const targetProjectId = projectId || currentPayment.project_id;
+
+      // Get financial status for the target project
+      const statusRes = await getProjectFinancialStatus(targetProjectId);
+      if (statusRes.success && statusRes.data && statusRes.data.total_amount > 0) {
+        const fs = statusRes.data;
+        // If same project: delta = newAmount - oldAmount (we only care if it's going up)
+        // If different project: full newAmount counts against the new project
+        let effectiveIncrease: number;
+        if (targetProjectId === currentPayment.project_id) {
+          effectiveIncrease = newAmount - oldAmount;
+        } else {
+          effectiveIncrease = newAmount; // full amount goes to new project
+        }
+
+        if (effectiveIncrease > 0 && effectiveIncrease > fs.remaining) {
+          return fail(`Updated amount would exceed project total. Maximum increase allowed: ${fmtMAD(fs.remaining)}.`);
+        }
+      }
+    }
+  }
 
   const { error } = await supabase()
     .from('payments')
@@ -151,8 +258,13 @@ export async function updatePayment(
   return ok();
 }
 
+/** Format a number as MAD currency for error messages */
+function fmtMAD(n: number): string {
+  return new Intl.NumberFormat('fr-MA', { style: 'currency', currency: 'MAD', minimumFractionDigits: 0 }).format(n);
+}
+
 /**
- * Delete a payment and subtract its amount from the project's paid_amount.
+ * Delete a payment, subtract from project paid_amount, and create a ledger reversal entry.
  */
 export async function deletePayment(
   id: string,
@@ -170,6 +282,20 @@ export async function deletePayment(
 
   // Subtract from project paid_amount
   await syncProjectPaidAmountSubtract(projectId, amount);
+
+  // Ledger reversal entry (non-fatal)
+  try {
+    await supabase().from('ledger').insert({
+      date: new Date().toISOString().split('T')[0],
+      type: 'income',
+      category: 'payment_reversal',
+      amount: -amount,
+      description: `Payment deleted (reversal). Original: ${fmtMAD(amount)}.`,
+      project_id: projectId,
+      source_module: 'payments',
+      source_id: id,
+    });
+  } catch { /* ledger reversal is non-fatal */ }
 
   return ok();
 }

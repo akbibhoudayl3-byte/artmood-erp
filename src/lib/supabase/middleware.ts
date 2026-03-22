@@ -21,6 +21,35 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
+/** Apply security headers to any response */
+function applySecurityHeaders(response: NextResponse): NextResponse {
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+  response.headers.set(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains; preload'
+  );
+  response.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "img-src 'self' data: blob: https://*.supabase.co",
+      "font-src 'self' data:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; ')
+  );
+  return response;
+}
+
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
@@ -37,13 +66,13 @@ export async function updateSession(request: NextRequest) {
       || request.headers.get('x-real-ip')
       || '0.0.0.0';
     if (!checkRateLimit(ip)) {
-      return new NextResponse('Too Many Requests', {
+      return applySecurityHeaders(new NextResponse('Too Many Requests', {
         status: 429,
         headers: {
           'Retry-After': '60',
           'Content-Type': 'text/plain',
         },
-      });
+      }));
     }
   }
 
@@ -72,18 +101,18 @@ export async function updateSession(request: NextRequest) {
 
   // Not logged in
   if (!user || authError) {
-    if (isPublic) return supabaseResponse;
+    if (isPublic) return applySecurityHeaders(supabaseResponse);
     // API routes: return 401 JSON (not a redirect — clients can't follow HTML redirects)
     if (pathname.startsWith('/api/')) {
-      return new NextResponse(
+      return applySecurityHeaders(new NextResponse(
         JSON.stringify({ error: 'Unauthorized', message: 'Authentication required' }),
         { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      ));
     }
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/auth/login';
     loginUrl.searchParams.set('next', pathname);
-    return NextResponse.redirect(loginUrl);
+    return applySecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
   // Already logged in, trying to hit login page
@@ -91,7 +120,7 @@ export async function updateSession(request: NextRequest) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';
     dashboardUrl.searchParams.delete('next');
-    return NextResponse.redirect(dashboardUrl);
+    return applySecurityHeaders(NextResponse.redirect(dashboardUrl));
   }
 
   // ── Fetch role (cached in cookie for performance) ─────────────────────────
@@ -110,7 +139,7 @@ export async function updateSession(request: NextRequest) {
       await supabase.auth.signOut();
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/auth/login';
-      return NextResponse.redirect(loginUrl);
+      return applySecurityHeaders(NextResponse.redirect(loginUrl));
     }
 
     role = profileData?.role as UserRole;
@@ -129,7 +158,7 @@ export async function updateSession(request: NextRequest) {
     // No profile found — deny access
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/auth/login';
-    return NextResponse.redirect(loginUrl);
+    return applySecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
   // ── RBAC: Check route permissions ─────────────────────────────────────────
@@ -141,47 +170,18 @@ export async function updateSession(request: NextRequest) {
 
   if (!allowed) {
     if (isApiRoute) {
-      return new NextResponse(
+      return applySecurityHeaders(new NextResponse(
         JSON.stringify({ error: 'Forbidden', message: 'Insufficient permissions' }),
         { status: 403, headers: { 'Content-Type': 'application/json' } }
-      );
+      ));
     }
     // Redirect app routes to dashboard with error
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';
     dashboardUrl.searchParams.set('error', 'forbidden');
-    return NextResponse.redirect(dashboardUrl);
+    return applySecurityHeaders(NextResponse.redirect(dashboardUrl));
   }
 
-  // ── Add security headers ──────────────────────────────────────────────────
-  supabaseResponse.headers.set('X-Frame-Options', 'DENY');
-  supabaseResponse.headers.set('X-Content-Type-Options', 'nosniff');
-  supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  supabaseResponse.headers.set('X-XSS-Protection', '1; mode=block');
-  supabaseResponse.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
-
-  // HSTS — force HTTPS for 1 year, include subdomains
-  supabaseResponse.headers.set(
-    'Strict-Transport-Security',
-    'max-age=31536000; includeSubDomains; preload'
-  );
-
-  // Content Security Policy — restrict resource loading
-  supabaseResponse.headers.set(
-    'Content-Security-Policy',
-    [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",   // Next.js needs inline + eval in dev
-      "style-src 'self' 'unsafe-inline'",                   // Tailwind injects inline styles
-      `connect-src 'self' https://*.supabase.co wss://*.supabase.co`,  // Supabase API + Realtime
-      `img-src 'self' data: blob: https://*.supabase.co`,   // Supabase Storage images
-      "font-src 'self' data:",
-      "frame-ancestors 'none'",                              // Same as X-Frame-Options DENY
-      "base-uri 'self'",
-      "form-action 'self'",
-      "object-src 'none'",
-    ].join('; ')
-  );
-
-  return supabaseResponse;
+  // ── Apply security headers and return ──────────────────────────────────────
+  return applySecurityHeaders(supabaseResponse);
 }

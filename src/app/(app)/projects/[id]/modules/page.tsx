@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { MATERIAL_THICKNESS_MAP, enforceThickness, safeEval } from '@/lib/services/kitchen-engine.service'
 import { RoleGuard } from '@/components/auth/RoleGuard'
 import ProjectMfgTabs from '@/components/projects/ProjectMfgTabs';
 import {
@@ -111,20 +112,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   shelf: 'bg-green-100 text-green-700',
 }
 
-// ─── BOM Formula Evaluator ────────────────────────────────────────────────────
-
-const safeEval = (expr: string, W: number, H: number, D: number): number => {
-  try {
-    const e = expr
-      .replace(/\{W\}/g, String(W))
-      .replace(/\{H\}/g, String(H))
-      .replace(/\{D\}/g, String(D))
-    // eslint-disable-next-line no-new-func
-    return Math.round(Function('"use strict"; return (' + e + ')')())
-  } catch {
-    return 0
-  }
-}
+// safeEval imported from kitchen-engine.service.ts (CSP-safe recursive descent parser)
 
 // ─── Module Config Popover ────────────────────────────────────────────────────
 
@@ -448,6 +436,7 @@ function ProjectModulesContent() {
           materialData[matType].edgeBandingMm += edgeMm * totalQty
 
           // project_parts rows (one per unit)
+          const validatedThickness = enforceThickness(matType, part.thickness_mm ?? 18);
           for (let i = 0; i < totalQty; i++) {
             allProjectParts.push({
               project_id: id,
@@ -455,7 +444,7 @@ function ProjectModulesContent() {
               part_code: part.code,
               part_name: part.name,
               material_type: matType,
-              thickness_mm: part.thickness_mm,
+              thickness_mm: validatedThickness,
               width_mm: partW,
               height_mm: partH,
               quantity: 1,

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, FolderKanban, Factory, Wallet, MoreHorizontal, Package, Calendar, CalendarOff, Wrench, UserCheck, Megaphone, Settings, FileText, ClipboardList, ScanLine, Truck, ShoppingCart, AlertTriangle, PieChart, Monitor, Star } from 'lucide-react';
+import { LayoutDashboard, Users, FolderKanban, Factory, Wallet, MoreHorizontal, Package, Calendar, CalendarOff, Wrench, UserCheck, Megaphone, Settings, FileText, ClipboardList, ScanLine, Truck, ShoppingCart, AlertTriangle, PieChart, Monitor, Star, ChefHat } from 'lucide-react';
 import { useState } from 'react';
 import { NAV_ITEMS } from '@/lib/constants';
 import { useLocale } from '@/lib/hooks/useLocale';
@@ -12,7 +12,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   LayoutDashboard, Users, FolderKanban, Factory, Wallet, Package,
   Calendar, CalendarOff, Wrench, UserCheck, Megaphone, Settings, FileText,
   ClipboardList, ScanLine, Truck, ShoppingCart, AlertTriangle, PieChart,
-  Monitor, Star,
+  Monitor, Star, ChefHat,
 };
 
 interface BottomNavProps {

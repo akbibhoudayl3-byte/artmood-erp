@@ -10,7 +10,10 @@ import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import type { StockReservation } from '@/types/database';
-import { ArrowLeft, Lock, Unlock, Package } from 'lucide-react';
+import { ArrowLeft, Lock, Unlock, Package, AlertCircle, CheckCircle } from 'lucide-react';
+import { releaseStockReservation } from '@/lib/services/index';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
 
 export default function StockReservationsPage() {
   const { profile } = useAuth();
@@ -21,6 +24,9 @@ export default function StockReservationsPage() {
   const [reservations, setReservations] = useState<StockReservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('reserved');
+  const [releaseError, setReleaseError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const confirmDlg = useConfirmDialog();
 
   useEffect(() => { loadReservations(); }, []);
 
@@ -33,14 +39,27 @@ export default function StockReservationsPage() {
     setLoading(false);
   }
 
-  async function releaseReservation(id: string, stockItemId: string, qty: number) {
-    await supabase.from('stock_reservations').update({ status: 'released', released_at: new Date().toISOString() }).eq('id', id);
-    // Decrease reserved_quantity directly
-    const { data: item } = await supabase.from('stock_items').select('reserved_quantity').eq('id', stockItemId).single();
-    if (item) {
-      await supabase.from('stock_items').update({ reserved_quantity: Math.max(0, (item.reserved_quantity || 0) - qty) }).eq('id', stockItemId);
-    }
-    loadReservations();
+  function handleRelease(resId: string, stockItemId: string, qty: number) {
+    confirmDlg.open({
+      title: 'Release Reservation',
+      message: 'Release this reservation? Stock will be returned to available inventory.',
+      onConfirm: async () => {
+        setReleaseError('');
+        const { error: resErr } = await supabase.from('stock_reservations')
+          .update({ status: 'released', released_at: new Date().toISOString() })
+          .eq('id', resId);
+        if (resErr) { setReleaseError('Failed to release: ' + resErr.message); return; }
+
+        const result = await releaseStockReservation(stockItemId, qty, profile?.id);
+        if (!result.success) {
+          setReleaseError(result.error || 'Failed to update stock.');
+        } else {
+          setSuccessMsg('Reservation released.');
+          setTimeout(() => setSuccessMsg(''), 3000);
+        }
+        loadReservations();
+      },
+    });
   }
 
   const filtered = reservations.filter(r => filterStatus === 'all' || r.status === filterStatus);
@@ -51,6 +70,11 @@ export default function StockReservationsPage() {
   return (
     <RoleGuard allowedRoles={['ceo', 'workshop_manager'] as any[]}>
     <div className="space-y-4">
+      {successMsg && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-xl px-4 py-3 text-sm">
+          <CheckCircle size={16} /> {successMsg}
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <button onClick={() => router.push('/stock')} className="p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft size={20} />
@@ -60,6 +84,12 @@ export default function StockReservationsPage() {
           <p className="text-sm text-[#64648B]">{reservations.filter(r => r.status === 'reserved').length} {t('stock.active_reservations')}</p>
         </div>
       </div>
+
+      {releaseError && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+          <AlertCircle size={16} className="shrink-0" /> {releaseError}
+        </div>
+      )}
 
       {/* Status Filters */}
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -95,7 +125,7 @@ export default function StockReservationsPage() {
                 <StatusBadge status={res.status} />
                 {res.status === 'reserved' && (profile?.role === 'ceo' || profile?.role === 'workshop_manager') && (
                   <button
-                    onClick={() => releaseReservation(res.id, res.stock_item_id, res.quantity)}
+                    onClick={() => handleRelease(res.id, res.stock_item_id, res.quantity)}
                     className="mt-1 text-xs text-red-500 hover:text-red-700"
                   >
                     {t('stock.release')}
@@ -113,6 +143,16 @@ export default function StockReservationsPage() {
           <p className="text-[#64648B]">{t('common.no_results')}</p>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmDlg.isOpen}
+        onClose={confirmDlg.close}
+        onConfirm={confirmDlg.confirm}
+        title={confirmDlg.title}
+        message={confirmDlg.message}
+        variant="danger"
+        loading={confirmDlg.loading}
+      />
     </div>
     </RoleGuard>
   );

@@ -109,10 +109,17 @@ export async function updateExpense(
 }
 
 /**
- * Delete an expense.
+ * Delete an expense and create a ledger reversal entry.
  */
 export async function deleteExpense(id: string): Promise<ServiceResult> {
   if (!id) return fail('Expense ID is required.');
+
+  // Fetch expense amount + project_id before deletion for ledger reversal
+  const { data: exp } = await supabase()
+    .from('expenses')
+    .select('amount, project_id, category, description')
+    .eq('id', id)
+    .single();
 
   const { error } = await supabase()
     .from('expenses')
@@ -120,5 +127,22 @@ export async function deleteExpense(id: string): Promise<ServiceResult> {
     .eq('id', id);
 
   if (error) return fail('Failed to delete expense: ' + error.message);
+
+  // Ledger reversal entry (non-fatal)
+  if (exp) {
+    try {
+      await supabase().from('ledger').insert({
+        date: new Date().toISOString().split('T')[0],
+        type: 'expense',
+        category: 'expense_reversal',
+        amount: -(exp.amount || 0),
+        description: `Expense deleted (reversal): ${exp.description || exp.category || 'N/A'}`,
+        project_id: exp.project_id || null,
+        source_module: 'expenses',
+        source_id: id,
+      });
+    } catch { /* ledger reversal is non-fatal */ }
+  }
+
   return ok();
 }

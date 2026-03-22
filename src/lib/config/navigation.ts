@@ -1,7 +1,7 @@
 import type { UserRole } from '@/types/database';
 
 // ============================================================
-// Navigation per role
+// Navigation per role — Workflow-driven sidebar
 // ============================================================
 export interface NavItem {
   label: string;
@@ -16,31 +16,14 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-// Flat list for BottomNav (unchanged)
+// Flat list for BottomNav (mobile)
 export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
   ceo: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-    { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
     { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
-    { label: 'Production Sheets', href: '/production/sheets', icon: 'FileText', i18nKey: 'nav.production_sheets' },
-    { label: 'Module Library', href: '/production/library', icon: 'BookOpen', i18nKey: 'nav.module_library' },
-    { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
-    { label: 'Documents', href: '/documents', icon: 'FileText', i18nKey: 'nav.documents' },
-    { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
-    { label: 'Reports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
-    { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
     { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-    { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
-    { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
-    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
-    { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
-    { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
-    { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
-    { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
-    { label: 'Surveys', href: '/surveys', icon: 'Star', i18nKey: 'nav.surveys' },
-    { label: 'Maintenance', href: '/production/maintenance', icon: 'Wrench', i18nKey: 'nav.maintenance' },
-    { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+    { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
   ],
   commercial_manager: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
@@ -48,49 +31,40 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
     { label: 'Quotes', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
     { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
-    { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
-    { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   designer: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
     { label: 'Quotes', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
-    { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
-    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+    { label: 'Catalogue', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   workshop_manager: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
-    { label: 'Workshop TV', href: '/production/dashboard', icon: 'Monitor', i18nKey: 'nav.workshop_tv' },
-    { label: 'Découpe & Chant', href: '/production/cutting', icon: 'Scissors', i18nKey: 'nav.cutting' },
-    { label: 'Maintenance', href: '/production/maintenance', icon: 'Wrench', i18nKey: 'nav.maintenance' },
-    { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
+    { label: 'SAW', href: '/saw/cutting-list', icon: 'Ruler', i18nKey: 'nav.saw_cutting' },
     { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-    { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
-    { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
-    { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
-    { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
-    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   workshop_worker: [
-    { label: 'My Tasks', href: '/production', icon: 'ClipboardList', i18nKey: 'nav.my_tasks' },
+    { label: 'My Tasks', href: '/production/my-tasks', icon: 'ClipboardCheck', i18nKey: 'nav.my_assigned_tasks' },
+    { label: 'Task Board', href: '/production/tasks', icon: 'ListTodo', i18nKey: 'nav.task_board' },
     { label: 'Scan', href: '/production/scan', icon: 'ScanLine', i18nKey: 'nav.scan' },
-    { label: 'Découpe & Chant', href: '/production/cutting', icon: 'Scissors', i18nKey: 'nav.cutting' },
-    { label: 'Report Issue', href: '/production/issues', icon: 'AlertTriangle', i18nKey: 'nav.report_issue' },
+    { label: 'SAW', href: '/saw/cutting-list', icon: 'Ruler', i18nKey: 'nav.saw_cutting' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   installer: [
-    { label: 'Schedule', href: '/installation', icon: 'Calendar', i18nKey: 'nav.schedule' },
+    { label: 'Planning', href: '/installation', icon: 'Calendar', i18nKey: 'nav.schedule' },
     { label: 'Current Job', href: '/installation/current', icon: 'Wrench', i18nKey: 'nav.current_job' },
+    { label: 'SAV', href: '/sav', icon: 'Headset', i18nKey: 'nav.sav' },
+    { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   hr_manager: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-    { label: 'Attendance', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.attendance' },
-    { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
-    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+    { label: 'Employés', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.attendance' },
+    { label: 'Congés', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
+    { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   community_manager: [
@@ -99,288 +73,301 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
-  // ─── New operational roles ──────────────────────────
   owner_admin: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-    { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
     { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
-    { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
     { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
-    { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   operations_manager: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-    { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
     { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
-    { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
     { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
     { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-    { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
-    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   logistics: [
     { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-    { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
-    { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+    { label: 'Installation', href: '/installation', icon: 'Truck', i18nKey: 'nav.installation' },
+    { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
   worker: [
-    { label: 'My Tasks', href: '/production', icon: 'ClipboardList', i18nKey: 'nav.my_tasks' },
+    { label: 'My Tasks', href: '/production/my-tasks', icon: 'ClipboardCheck', i18nKey: 'nav.my_assigned_tasks' },
     { label: 'Scan', href: '/production/scan', icon: 'ScanLine', i18nKey: 'nav.scan' },
+    { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
     { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
   ],
 };
 
-// Grouped navigation for Sidebar (better visual hierarchy)
+// ============================================================
+// Grouped navigation for Sidebar — workflow-driven
+// ============================================================
 export const NAV_GROUPS: Record<UserRole, NavGroup[]> = {
+  // ═══════════════════════════════════════════════════════════
+  // CEO — Full access, workflow-driven
+  // ═══════════════════════════════════════════════════════════
   ceo: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     ]},
     { label: 'CRM', i18nKey: 'nav.group_crm', items: [
-      { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
-      { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
-      { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+      { label: 'Prospects', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+      { label: 'Projets', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+      { label: 'Devis', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
+      { label: '+ Cuisine', href: '/quotes/kitchen-wizard', icon: 'ChefHat', i18nKey: 'nav.kitchen_wizard' },
+      { label: 'Calendrier', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     ]},
-    { label: 'Factory', i18nKey: 'nav.group_factory', items: [
-      { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
-      { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
-      { label: 'Maintenance', href: '/production/maintenance', icon: 'Wrench', i18nKey: 'nav.maintenance' },
+    { label: 'Production', i18nKey: 'nav.group_factory', items: [
+      { label: 'Ordres', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
     ]},
-    { label: 'Inventory', i18nKey: 'nav.group_inventory', items: [
-      { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-
-      { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
-      { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
+    { label: 'Découpe', i18nKey: 'nav.group_cutting', items: [
+      { label: 'Scie Panneaux', href: '/saw/cutting-list', icon: 'Ruler', i18nKey: 'nav.saw_cutting' },
+      { label: 'CNC', href: '/cutting/jobs', icon: 'Scissors', i18nKey: 'nav.cutting_cnc' },
+    ]},
+    { label: 'Installation', i18nKey: 'nav.group_installation', items: [
+      { label: 'Planning', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
+      { label: 'SAV', href: '/sav', icon: 'Headset', i18nKey: 'nav.sav' },
+    ]},
+    { label: 'Stock', i18nKey: 'nav.group_inventory', items: [
+      { label: 'Matériaux', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
+      { label: 'Fournisseurs', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
     ]},
     { label: 'Finance', i18nKey: 'nav.group_finance', items: [
-      { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
-      { label: 'Reports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
+      { label: 'Trésorerie', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
+      { label: 'Factures', href: '/finance/invoices', icon: 'FileText', i18nKey: 'nav.invoices' },
+      { label: 'Paiements', href: '/finance/payments', icon: 'CreditCard', i18nKey: 'nav.payments' },
+      { label: 'Dépenses', href: '/finance/expenses', icon: 'Receipt', i18nKey: 'nav.expenses' },
+      { label: 'Rapports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
     ]},
-    { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
-      { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
-      { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
-    ]},
-    { label: 'Organization', i18nKey: 'nav.group_org', items: [
-      { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
-      { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
-      { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
-      { label: 'Surveys', href: '/surveys', icon: 'Star', i18nKey: 'nav.surveys' },
-      { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-      { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
+    { label: 'RH', i18nKey: 'nav.group_org', items: [
+      { label: 'Employés', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
+      { label: 'Congés', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
+      { label: 'Pointage', href: '/hr/work-time', icon: 'Clock', i18nKey: 'nav.work_time_reports' },
     ]},
     { label: '', items: [
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
+
+  // ═══════════════════════════════════════════════════════════
+  // COMMERCIAL MANAGER — CRM + Quotes + SAV
+  // ═══════════════════════════════════════════════════════════
   commercial_manager: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     ]},
     { label: 'CRM', i18nKey: 'nav.group_crm', items: [
-      { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
-      { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
-      { label: 'Quotes', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
-      { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+      { label: 'Prospects', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+      { label: 'Projets', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+      { label: 'Devis', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
+      { label: '+ Cuisine', href: '/quotes/kitchen-wizard', icon: 'ChefHat', i18nKey: 'nav.kitchen_wizard' },
+      { label: 'Calendrier', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     ]},
-    { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
-      { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
+    { label: 'Suivi', i18nKey: 'nav.group_monitoring', items: [
+      { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
+      { label: 'SAV', href: '/sav', icon: 'Headset', i18nKey: 'nav.sav' },
+    ]},
+    { label: 'Finance', i18nKey: 'nav.group_finance', items: [
+      { label: 'Factures', href: '/finance/invoices', icon: 'FileText', i18nKey: 'nav.invoices' },
+      { label: 'Paiements', href: '/finance/payments', icon: 'CreditCard', i18nKey: 'nav.payments' },
+      { label: 'Rapports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
     ]},
     { label: '', items: [
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
+
+  // ═══════════════════════════════════════════════════════════
+  // DESIGNER — Projects + Quotes + Catalogue
+  // ═══════════════════════════════════════════════════════════
   designer: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-      { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
-      { label: 'Quotes', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
-      { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     ]},
-    { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
-      { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
+    { label: 'Design', i18nKey: 'nav.group_design', items: [
+      { label: 'Projets', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+      { label: 'Devis', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
+      { label: 'Catalogue', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
+      { label: 'Calendrier', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     ]},
     { label: '', items: [
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
+
+  // ═══════════════════════════════════════════════════════════
+  // WORKSHOP MANAGER — Production + Cutting + Stock
+  // ═══════════════════════════════════════════════════════════
   workshop_manager: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     ]},
-    { label: 'Factory', i18nKey: 'nav.group_factory', items: [
-      { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
-      { label: 'Workshop TV', href: '/production/dashboard', icon: 'Monitor', i18nKey: 'nav.workshop_tv' },
-    { label: 'Découpe & Chant', href: '/production/cutting', icon: 'Scissors', i18nKey: 'nav.cutting' },
-      { label: 'Maintenance', href: '/production/maintenance', icon: 'Wrench', i18nKey: 'nav.maintenance' },
-      { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+    { label: 'Production', i18nKey: 'nav.group_factory', items: [
+      { label: 'Ordres', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
+      { label: 'Projets', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
     ]},
-    { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
-      { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
-      { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
+    { label: 'Découpe', i18nKey: 'nav.group_cutting', items: [
+      { label: 'Scie Panneaux', href: '/saw/cutting-list', icon: 'Ruler', i18nKey: 'nav.saw_cutting' },
+      { label: 'CNC', href: '/cutting/jobs', icon: 'Scissors', i18nKey: 'nav.cutting_cnc' },
     ]},
-    { label: 'Inventory', i18nKey: 'nav.group_inventory', items: [
-      { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-
-      { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
-      { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
+    { label: 'Stock', i18nKey: 'nav.group_inventory', items: [
+      { label: 'Matériaux', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
+      { label: 'Fournisseurs', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
     ]},
     { label: '', items: [
-      { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+      { label: 'SAV', href: '/sav', icon: 'Headset', i18nKey: 'nav.sav' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-      { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
+
+  // ═══════════════════════════════════════════════════════════
+  // WORKSHOP WORKER — Tasks + Cutting only
+  // ═══════════════════════════════════════════════════════════
   workshop_worker: [
     { label: '', items: [
-      { label: 'My Tasks', href: '/production', icon: 'ClipboardList', i18nKey: 'nav.my_tasks' },
-      { label: 'Scan', href: '/production/scan', icon: 'ScanLine', i18nKey: 'nav.scan' },
-    { label: 'Découpe & Chant', href: '/production/cutting', icon: 'Scissors', i18nKey: 'nav.cutting' },
-      { label: 'Report Issue', href: '/production/issues', icon: 'AlertTriangle', i18nKey: 'nav.report_issue' },
+      { label: 'Mes Tâches', href: '/production/my-tasks', icon: 'ClipboardCheck', i18nKey: 'nav.my_assigned_tasks' },
+      { label: 'Tableau Tâches', href: '/production/tasks', icon: 'ListTodo', i18nKey: 'nav.task_board' },
+      { label: 'Scanner', href: '/production/scan', icon: 'ScanLine', i18nKey: 'nav.scan' },
+      { label: 'Scie Panneaux', href: '/saw/cutting-list', icon: 'Ruler', i18nKey: 'nav.saw_cutting' },
+      { label: 'Signaler', href: '/production/issues', icon: 'AlertTriangle', i18nKey: 'nav.report_issue' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
+
+  // ═══════════════════════════════════════════════════════════
+  // INSTALLER
+  // ═══════════════════════════════════════════════════════════
   installer: [
     { label: '', items: [
-      { label: 'Schedule', href: '/installation', icon: 'Calendar', i18nKey: 'nav.schedule' },
-      { label: 'Current Job', href: '/installation/current', icon: 'Wrench', i18nKey: 'nav.current_job' },
+      { label: 'Planning', href: '/installation', icon: 'Calendar', i18nKey: 'nav.schedule' },
+      { label: 'Chantier actuel', href: '/installation/current', icon: 'Wrench', i18nKey: 'nav.current_job' },
+      { label: 'SAV', href: '/sav', icon: 'Headset', i18nKey: 'nav.sav' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
+
+  // ═══════════════════════════════════════════════════════════
+  // HR MANAGER
+  // ═══════════════════════════════════════════════════════════
   hr_manager: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     ]},
-    { label: 'HR', i18nKey: 'nav.hr', items: [
-      { label: 'Attendance', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.attendance' },
-      { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
-      { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
-      { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-      { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
+    { label: 'RH', i18nKey: 'nav.hr', items: [
+      { label: 'Employés', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.attendance' },
+      { label: 'Congés', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
+      { label: 'Pointage', href: '/hr/work-time', icon: 'Clock', i18nKey: 'nav.work_time_reports' },
+      { label: 'Calendrier', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     ]},
     { label: '', items: [
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
+
+  // ═══════════════════════════════════════════════════════════
+  // COMMUNITY MANAGER
+  // ═══════════════════════════════════════════════════════════
   community_manager: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-      { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+      { label: 'Prospects', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
       { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
 
-  // ─── owner_admin: full access ────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // OWNER ADMIN — Same as CEO
+  // ═══════════════════════════════════════════════════════════
   owner_admin: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     ]},
     { label: 'CRM', i18nKey: 'nav.group_crm', items: [
-      { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
-      { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
-      { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+      { label: 'Prospects', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+      { label: 'Projets', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+      { label: 'Devis', href: '/quotes', icon: 'FileText', i18nKey: 'nav.quotes' },
     ]},
-    { label: 'Factory', i18nKey: 'nav.group_factory', items: [
-      { label: 'Production', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
-      { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
-      { label: 'Maintenance', href: '/production/maintenance', icon: 'Wrench', i18nKey: 'nav.maintenance' },
+    { label: 'Production', i18nKey: 'nav.group_factory', items: [
+      { label: 'Ordres', href: '/production', icon: 'Factory', i18nKey: 'nav.production' },
+      { label: 'SAV', href: '/sav', icon: 'Headset', i18nKey: 'nav.sav' },
     ]},
-    { label: 'Inventory', i18nKey: 'nav.group_inventory', items: [
-      { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-
-      { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
-      { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
+    { label: 'Stock', i18nKey: 'nav.group_inventory', items: [
+      { label: 'Matériaux', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
+      { label: 'Fournisseurs', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
     ]},
     { label: 'Finance', i18nKey: 'nav.group_finance', items: [
-      { label: 'Finance', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
-      { label: 'Reports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
+      { label: 'Trésorerie', href: '/finance/money-hub', icon: 'Wallet', i18nKey: 'nav.finance' },
+      { label: 'Rapports', href: '/finance/reports', icon: 'PieChart', i18nKey: 'nav.reports' },
     ]},
-    { label: 'Manufacturing', i18nKey: 'nav.group_manufacturing', items: [
-      { label: 'Catalogue Modules', href: '/catalog/modules', icon: 'Layers', i18nKey: 'nav.catalog_modules' },
-      { label: 'Intelligence Usine', href: '/factory/intelligence', icon: 'BarChart3', i18nKey: 'nav.factory_intelligence' },
-    ]},
-    { label: 'Organization', i18nKey: 'nav.group_org', items: [
-      { label: 'HR', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
-      { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
-      { label: 'Marketing', href: '/marketing', icon: 'Megaphone', i18nKey: 'nav.marketing' },
-      { label: 'Surveys', href: '/surveys', icon: 'Star', i18nKey: 'nav.surveys' },
-      { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-      { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
+    { label: 'RH', i18nKey: 'nav.group_org', items: [
+      { label: 'Employés', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.hr' },
+      { label: 'Congés', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
     ]},
     { label: '', items: [
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
 
-  // ─── operations_manager: Nadia — CRM+Ops+HR (no Finance) ─────
+  // ═══════════════════════════════════════════════════════════
+  // OPERATIONS MANAGER
+  // ═══════════════════════════════════════════════════════════
   operations_manager: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
     ]},
     { label: 'CRM', i18nKey: 'nav.group_crm', items: [
-      { label: 'Leads', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
-      { label: 'Projects', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
-      { label: 'Calendar', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
+      { label: 'Prospects', href: '/leads', icon: 'Users', i18nKey: 'nav.leads' },
+      { label: 'Projets', href: '/projects', icon: 'FolderKanban', i18nKey: 'nav.projects' },
+      { label: 'Calendrier', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
     ]},
-    { label: 'Factory', i18nKey: 'nav.group_factory', items: [
+    { label: 'Suivi', i18nKey: 'nav.group_monitoring', items: [
       { label: 'Installation', href: '/installation', icon: 'Wrench', i18nKey: 'nav.installation' },
+      { label: 'SAV', href: '/sav', icon: 'Headset', i18nKey: 'nav.sav' },
     ]},
-    { label: 'Inventory', i18nKey: 'nav.group_inventory', items: [
-      { label: 'Stock', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
-      { label: 'Suppliers', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
-      { label: 'Purchase Orders', href: '/purchase-orders', icon: 'ShoppingCart', i18nKey: 'nav.purchase_orders' },
+    { label: 'Stock', i18nKey: 'nav.group_inventory', items: [
+      { label: 'Matériaux', href: '/stock', icon: 'Package', i18nKey: 'nav.stock' },
+      { label: 'Fournisseurs', href: '/suppliers', icon: 'Truck', i18nKey: 'nav.suppliers' },
     ]},
-    { label: 'HR', i18nKey: 'nav.hr', items: [
-      { label: 'Attendance', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.attendance' },
-      { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
-      { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-      { label: 'Rapports Temps', href: '/hr/work-time', icon: 'BarChart2', i18nKey: 'nav.work_time_reports' },
+    { label: 'RH', i18nKey: 'nav.hr', items: [
+      { label: 'Employés', href: '/hr', icon: 'UserCheck', i18nKey: 'nav.attendance' },
+      { label: 'Congés', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
+      { label: 'Pointage', href: '/hr/work-time', icon: 'Clock', i18nKey: 'nav.work_time_reports' },
     ]},
     { label: '', items: [
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
 
-  // ─── logistics: Jamal — deliveries only ──────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // LOGISTICS
+  // ═══════════════════════════════════════════════════════════
   logistics: [
     { label: '', items: [
       { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', i18nKey: 'nav.dashboard' },
-      { label: 'Installation', href: '/installation', icon: 'Truck', i18nKey: 'nav.installation' },
+      { label: 'Livraisons', href: '/installation', icon: 'Truck', i18nKey: 'nav.installation' },
+      { label: 'Calendrier', href: '/calendar', icon: 'Calendar', i18nKey: 'nav.calendar' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
 
-  // ─── worker: generic workshop worker ─────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // WORKER — Minimal
+  // ═══════════════════════════════════════════════════════════
   worker: [
     { label: '', items: [
-      { label: 'My Tasks', href: '/production', icon: 'ClipboardList', i18nKey: 'nav.my_tasks' },
-      { label: 'Scan', href: '/production/scan', icon: 'ScanLine', i18nKey: 'nav.scan' },
-      { label: 'Découpe & Chant', href: '/production/cutting', icon: 'Scissors', i18nKey: 'nav.cutting' },
-      { label: 'Report Issue', href: '/production/issues', icon: 'AlertTriangle', i18nKey: 'nav.report_issue' },
-      { label: 'Leaves', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
+      { label: 'Mes Tâches', href: '/production/my-tasks', icon: 'ClipboardCheck', i18nKey: 'nav.my_assigned_tasks' },
+      { label: 'Scanner', href: '/production/scan', icon: 'ScanLine', i18nKey: 'nav.scan' },
+      { label: 'Congés', href: '/hr/leaves', icon: 'CalendarOff', i18nKey: 'nav.leaves' },
       { label: 'Mon Temps', href: '/work-time', icon: 'Clock', i18nKey: 'nav.work_time' },
-
-      { label: 'Settings', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
+      { label: 'Paramètres', href: '/settings', icon: 'Settings', i18nKey: 'nav.settings' },
     ]},
   ],
 };

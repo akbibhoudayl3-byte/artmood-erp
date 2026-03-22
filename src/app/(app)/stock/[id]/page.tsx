@@ -8,9 +8,10 @@ import Card, { CardHeader, CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Input from '@/components/ui/Input';
-import { ArrowLeft, Package, MapPin, AlertTriangle, TrendingUp, TrendingDown, ArrowRightLeft } from 'lucide-react';
+import { ArrowLeft, Package, MapPin, AlertTriangle, TrendingUp, TrendingDown, ArrowRightLeft, AlertCircle, CheckCircle } from 'lucide-react';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import { recordStockMovement } from '@/lib/services/index';
 
 interface StockItemDetail {
   id: string;
@@ -60,6 +61,8 @@ export default function StockItemDetailPage() {
   const [moveType, setMoveType] = useState('in');
   const [moveQty, setMoveQty] = useState('');
   const [moveNotes, setMoveNotes] = useState('');
+  const [moveError, setMoveError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => { loadData(); }, [id]);
 
@@ -81,22 +84,35 @@ export default function StockItemDetailPage() {
 
   async function addMovement() {
     const qty = parseFloat(moveQty);
-    if (!qty) return;
-    const actualQty = ['out', 'consume'].includes(moveType) ? -qty : qty;
-    const { error } = await supabase.from('stock_movements').insert({
-      stock_item_id: id,
-      movement_type: moveType,
-      quantity: actualQty,
+    if (!qty || qty <= 0) { setMoveError('Quantity must be greater than zero.'); return; }
+    setMoveError('');
+
+    // Map UI type to service direction
+    const directionMap: Record<string, 'in' | 'out' | 'adjust'> = {
+      in: 'in', out: 'out', consume: 'out', adjust: 'adjust',
+    };
+    const direction = directionMap[moveType] || 'in';
+
+    const result = await recordStockMovement({
+      stock_item_id: id as string,
+      direction,
+      quantity: qty,
+      target_quantity: direction === 'adjust' ? qty : undefined,
       notes: moveNotes || null,
       created_by: profile?.id,
+      movement_type: moveType === 'consume' ? 'consume' : undefined,
     });
-    if (error) {
-      alert('Error: ' + error.message);
+
+    if (!result.success) {
+      setMoveError(result.error || 'Movement failed.');
       return;
     }
     setShowAddMovement(false);
     setMoveQty('');
     setMoveNotes('');
+    setMoveError('');
+    setSuccessMsg('Stock movement recorded.');
+    setTimeout(() => setSuccessMsg(''), 3000);
     loadData();
   }
 
@@ -108,6 +124,11 @@ export default function StockItemDetailPage() {
   return (
     <RoleGuard allowedRoles={['ceo', 'workshop_manager'] as any[]}>
     <div className="space-y-4">
+      {successMsg && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-xl px-4 py-3 text-sm">
+          <CheckCircle size={16} /> {successMsg}
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <button onClick={() => router.push('/stock')} className="p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft size={20} />
@@ -188,6 +209,11 @@ export default function StockItemDetailPage() {
                   </select>
                   <Input type="number" placeholder="Quantity" value={moveQty} onChange={(e) => setMoveQty(e.target.value)} />
                   <Input placeholder="Notes (optional)" value={moveNotes} onChange={(e) => setMoveNotes(e.target.value)} />
+                  {moveError && (
+                    <div className="flex items-center gap-1.5 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                      <AlertCircle size={14} className="shrink-0" /> {moveError}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <Button variant="secondary" className="flex-1" onClick={() => setShowAddMovement(false)}>{t('common.cancel')}</Button>
                     <Button variant="primary" className="flex-1" onClick={addMovement}>{t('common.save')}</Button>

@@ -9,6 +9,8 @@ import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { ArrowLeft, Truck, Calendar, FileText, Phone, Package, CheckCircle, X, AlertTriangle } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
 
 interface PODetail {
   id: string; status: string; total_amount: number; notes: string | null;
@@ -40,10 +42,23 @@ export default function PurchaseOrderDetailPage() {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [stockItems, setStockItems] = useState<StockItemOption[]>([]);
   const [lineMapping, setLineMapping] = useState<Record<string, string>>({});
+  const [receivedQty, setReceivedQty] = useState<Record<string, number>>({});
+  const [newItemCategory, setNewItemCategory] = useState<Record<string, string>>({});
   const [receiving, setReceiving] = useState(false);
   const [receiveError, setReceiveError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loadingStock, setLoadingStock] = useState(false);
+  const confirmDlg = useConfirmDialog();
+
+  const STOCK_CATEGORIES = [
+    { value: 'raw_materials', label: 'Raw Materials' },
+    { value: 'panels', label: 'Panels' },
+    { value: 'hardware', label: 'Hardware' },
+    { value: 'accessories', label: 'Accessories' },
+    { value: 'workshop_supplies', label: 'Workshop Supplies' },
+    { value: 'packaging', label: 'Packaging' },
+    { value: 'outsourced_components', label: 'Outsourced Components' },
+  ];
 
   useEffect(() => { loadData(); }, [id]);
 
@@ -59,9 +74,27 @@ export default function PurchaseOrderDetailPage() {
     setLoading(false);
   }
 
-  async function updateStatus(status: string) {
-    await supabase.from('purchase_orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
-    loadData();
+  function updateStatus(status: string) {
+    const doUpdate = async () => {
+      const { error: statusErr } = await supabase.from('purchase_orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+      if (statusErr) {
+        setReceiveError('Failed to update status: ' + statusErr.message);
+        return;
+      }
+      setSuccessMsg(`Status updated to ${status}.`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+      loadData();
+    };
+
+    if (status === 'cancelled') {
+      confirmDlg.open({
+        title: 'Cancel Purchase Order',
+        message: 'Cancel this purchase order? This action cannot be undone.',
+        onConfirm: doUpdate,
+      });
+    } else {
+      doUpdate();
+    }
   }
 
   async function openReceiveModal() {
@@ -78,8 +111,10 @@ export default function PurchaseOrderDetailPage() {
     const fetchedItems: StockItemOption[] = (items as StockItemOption[]) || [];
     setStockItems(fetchedItems);
 
-    // Pre-select by name similarity
+    // Pre-select by name similarity + init received quantities
     const initialMapping: Record<string, string> = {};
+    const initialQty: Record<string, number> = {};
+    const initialCat: Record<string, string> = {};
     for (const line of lines) {
       const normalizedLine = line.item_name.toLowerCase().trim();
       const match = fetchedItems.find(si => {
@@ -89,8 +124,12 @@ export default function PurchaseOrderDetailPage() {
           normalizedLine.includes(normalizedItem);
       });
       initialMapping[line.id] = match ? match.id : 'new';
+      initialQty[line.id] = line.quantity; // default: ordered qty
+      initialCat[line.id] = 'raw_materials';
     }
     setLineMapping(initialMapping);
+    setReceivedQty(initialQty);
+    setNewItemCategory(initialCat);
     setLoadingStock(false);
   }
 
@@ -98,6 +137,8 @@ export default function PurchaseOrderDetailPage() {
     setShowReceiveModal(false);
     setReceiveError('');
     setLineMapping({});
+    setReceivedQty({});
+    setNewItemCategory({});
   }
 
   async function handleReceiveItems() {
@@ -112,6 +153,12 @@ export default function PurchaseOrderDetailPage() {
 
       let stockItemId = mapped;
 
+      const actualQty = receivedQty[line.id] ?? line.quantity;
+      if (actualQty <= 0) {
+        errors.push(`Skipped ${line.item_name}: received quantity must be > 0`);
+        continue;
+      }
+
       // If 'new', create the stock item first
       if (mapped === 'new') {
         const { data: newItem, error: insertErr } = await supabase
@@ -119,7 +166,7 @@ export default function PurchaseOrderDetailPage() {
           .insert({
             name: line.item_name,
             sku: null,
-            category: 'raw_materials',
+            category: newItemCategory[line.id] || 'raw_materials',
             unit: line.unit || 'unit',
             current_quantity: 0,
             minimum_quantity: 0,
@@ -138,14 +185,14 @@ export default function PurchaseOrderDetailPage() {
         stockItemId = newItem.id;
       }
 
-      // Create stock movement
+      // Create stock movement with actual received quantity
       const { error: movErr } = await supabase.from('stock_movements').insert({
         stock_item_id: stockItemId,
         movement_type: 'purchase_in',
-        quantity: line.quantity,
+        quantity: actualQty,
         reference_type: 'purchase_order',
         reference_id: id,
-        notes: `PO Receipt: ${line.item_name} | Supplier: ${po?.supplier?.name || 'Unknown'}`,
+        notes: `PO Receipt: ${line.item_name} (ordered: ${line.quantity}, received: ${actualQty}) | Supplier: ${po?.supplier?.name || 'Unknown'}`,
         created_by: profile?.id,
         unit: line.unit || 'unit',
       });
@@ -182,6 +229,8 @@ export default function PurchaseOrderDetailPage() {
     setReceiving(false);
     setShowReceiveModal(false);
     setLineMapping({});
+    setReceivedQty({});
+    setNewItemCategory({});
 
     const msg = errors.length > 0
       ? `Receipt confirmed: ${movementsCreated} stock movement(s) created. ${errors.length} item(s) skipped due to errors.`
@@ -521,11 +570,39 @@ export default function PurchaseOrderDetailPage() {
                             </select>
                           </div>
 
-                          {/* Hint for 'new' */}
+                          {/* Received qty — editable */}
+                          {!isSkipped && (
+                            <div className="flex items-center gap-2 mt-2">
+                              <label className="text-xs text-gray-500 flex-shrink-0 w-16">Received:</label>
+                              <input
+                                type="number"
+                                min={0}
+                                step="any"
+                                value={receivedQty[line.id] ?? line.quantity}
+                                onChange={e => setReceivedQty(prev => ({ ...prev, [line.id]: parseFloat(e.target.value) || 0 }))}
+                                className="w-24 text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <span className="text-xs text-gray-400">of {line.quantity} {line.unit} ordered</span>
+                              {(receivedQty[line.id] ?? line.quantity) !== line.quantity && (
+                                <span className="text-xs text-orange-600 font-medium">Partial</span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Category selector for new items */}
                           {isNew && (
-                            <p className="text-xs text-blue-600 mt-1.5 pl-[4.5rem]">
-                              A new stock item "{line.item_name}" (category: raw_materials, unit: {line.unit || 'unit'}) will be created automatically.
-                            </p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <label className="text-xs text-gray-500 flex-shrink-0 w-16">Category:</label>
+                              <select
+                                value={newItemCategory[line.id] || 'raw_materials'}
+                                onChange={e => setNewItemCategory(prev => ({ ...prev, [line.id]: e.target.value }))}
+                                className="flex-1 text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                {STOCK_CATEGORIES.map(cat => (
+                                  <option key={cat.value} value={cat.value}>{cat.label}</option>
+                                ))}
+                              </select>
+                            </div>
                           )}
                         </div>
                       );
@@ -576,6 +653,16 @@ export default function PurchaseOrderDetailPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmDlg.isOpen}
+        onClose={confirmDlg.close}
+        onConfirm={confirmDlg.confirm}
+        title={confirmDlg.title}
+        message={confirmDlg.message}
+        variant="danger"
+        loading={confirmDlg.loading}
+      />
     </RoleGuard>
   );
 }

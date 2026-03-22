@@ -11,6 +11,10 @@ import {
 import type { Profile, Conversation, Message, Reaction } from '@/lib/services/chat.service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+/** Escape HTML entities to prevent XSS when rendering user-generated content. */
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function getInitials(n: string) { return n.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2); }
 function isOnline(ls?: string) { return ls ? Date.now() - new Date(ls).getTime() < 300000 : false; }
 function fmtSize(b: number) { return b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
@@ -260,7 +264,7 @@ export default function MessageView(props: MessageViewProps) {
                           ) : msg.file_url ? (
                             msg.file_type?.startsWith('image/') ? <div><img src={msg.file_url} alt="" className="max-w-[200px] rounded-lg mb-0.5 cursor-pointer" onClick={() => window.open(msg.file_url, '_blank')} />{msg.content && msg.content !== msg.file_name && <p>{msg.content}</p>}</div>
                             : <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-1.5 ${isMe ? 'text-white' : 'text-[#1a1a2e]'}`}><FileText size={16} /><div className="min-w-0"><p className="text-xs font-medium truncate">{msg.file_name}</p><p className="text-[9px] opacity-70">{fmtSize(msg.file_size || 0)}</p></div><Download size={14} className="opacity-70" /></a>
-                          ) : <span dangerouslySetInnerHTML={{ __html: msg.content.replace(/@(\S+\s?\S*)/g, '<span class="font-bold text-amber-300">@$1</span>') }} />}
+                          ) : <span dangerouslySetInnerHTML={{ __html: escapeHtml(msg.content).replace(/@(\S+\s?\S*)/g, '<span class="font-bold text-amber-300">@$1</span>') }} />}
                         {msg.edited_at && !msg.is_deleted && <span className="text-[8px] opacity-50 ml-0.5">(edited)</span>}
 
                         <div className={`absolute ${isMe ? '-left-16' : '-right-16'} top-0 hidden group-hover/msg:flex items-center gap-0 bg-white shadow rounded-lg p-0.5 border z-10`}>

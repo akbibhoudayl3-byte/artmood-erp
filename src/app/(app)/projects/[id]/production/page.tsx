@@ -9,6 +9,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import { generateTasksForOrder } from '@/lib/services/task.service';
 import {
   ArrowLeft, Plus, Package, CheckCircle, AlertTriangle,
   Scissors, Layers, Hammer, CheckSquare, DollarSign, Trash2,
@@ -204,6 +205,8 @@ export default function ProjectProductionPage() {
     }).select().single();
 
     if (!error && data) {
+      // Auto-generate workflow tasks for the new order
+      generateTasksForOrder(data.id, id as string).catch(() => {});
       setOrders(prev => [data as ProductionOrderItem, ...prev]);
       setSelectedOrder(data as ProductionOrderItem);
       setTab('materials');

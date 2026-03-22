@@ -36,7 +36,8 @@ export default function LeadDetailPage() {
   const supabase = createClient();
   const { t } = useLocale();
 
-  const [lead, setLead] = useState<Lead & { assigned_profile?: { full_name: string }; project_id?: string | null } | null>(null);
+  const [lead, setLead] = useState<Lead & { assigned_profile?: { full_name: string } } | null>(null);
+  const [linkedProjectId, setLinkedProjectId] = useState<string | null>(null);
   const [activities, setActivities] = useState<(LeadActivity & { user?: { full_name: string } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState('');
@@ -62,7 +63,7 @@ export default function LeadDetailPage() {
   useEffect(() => { loadData(); }, [id]);
 
   async function loadData() {
-    const [leadRes, actRes] = await Promise.all([
+    const [leadRes, actRes, projRes] = await Promise.all([
       supabase.from('leads')
         .select('*, assigned_profile:profiles!leads_assigned_to_fkey(full_name)')
         .eq('id', id).single(),
@@ -70,9 +71,14 @@ export default function LeadDetailPage() {
         .select('*, user:profiles(full_name)')
         .eq('lead_id', id)
         .order('created_at', { ascending: false }),
+      supabase.from('projects')
+        .select('id')
+        .eq('lead_id', id)
+        .limit(1),
     ]);
     setLead(leadRes.data as typeof lead);
     setActivities((actRes.data as typeof activities) || []);
+    setLinkedProjectId(projRes.data?.[0]?.id || null);
     setLoading(false);
   }
 
@@ -103,9 +109,12 @@ export default function LeadDetailPage() {
   }
 
   async function saveEdit() {
-    if (!editForm.full_name.trim() || !editForm.phone.trim()) return;
+    if (!editForm.full_name.trim() || !editForm.phone.trim()) {
+      setConvertError('Name and phone are required.');
+      return;
+    }
     setEditSaving(true);
-    await supabase.from('leads').update({
+    const { error: editErr } = await supabase.from('leads').update({
       full_name: editForm.full_name.trim(),
       phone: editForm.phone.trim(),
       city: editForm.city || null,
@@ -113,13 +122,18 @@ export default function LeadDetailPage() {
       notes: editForm.notes || null,
       updated_at: new Date().toISOString(),
     }).eq('id', id);
-    setShowEdit(false);
     setEditSaving(false);
+    if (editErr) {
+      setConvertError('Failed to save: ' + editErr.message);
+      return;
+    }
+    setShowEdit(false);
     loadData();
   }
 
   async function updateStatus(newStatus: LeadStatus) {
-    await supabase.from('leads').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error: statusErr } = await supabase.from('leads').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    if (statusErr) return;
     await supabase.from('lead_activities').insert({
       lead_id: id, user_id: profile?.id, activity_type: 'status_change',
       description: `Status changed to ${newStatus}`,
@@ -129,10 +143,10 @@ export default function LeadDetailPage() {
 
   async function addNote() {
     if (!newNote.trim()) return;
-    await supabase.from('lead_activities').insert({
+    const { error: noteErr } = await supabase.from('lead_activities').insert({
       lead_id: id, user_id: profile?.id, activity_type: 'note', description: newNote.trim(),
     });
-    setNewNote('');
+    if (!noteErr) setNewNote('');
     loadData();
   }
 
@@ -156,7 +170,7 @@ export default function LeadDetailPage() {
           total_amount: convertForm.budget ? parseFloat(convertForm.budget) : 0,
           status: 'measurements',
           created_by: profile?.id,
-          source_lead_id: lead?.id,
+          lead_id: lead?.id,
           notes: convertForm.notes.trim() || null,
         })
         .select('id, reference_code')
@@ -168,9 +182,8 @@ export default function LeadDetailPage() {
         return;
       }
 
-      // 2. Update lead with project_id
+      // 2. Update lead status to won
       await supabase.from('leads').update({
-        project_id: newProject.id,
         status: 'won',
         updated_at: new Date().toISOString(),
       }).eq('id', id);
@@ -306,7 +319,7 @@ export default function LeadDetailPage() {
       )}
 
       {/* Convert to Project Card — shown only when won and no project yet */}
-      {lead.status === 'won' && !lead.project_id && canManageLeads && (
+      {lead.status === 'won' && !linkedProjectId && canManageLeads && (
         <div className="rounded-2xl border-2 border-green-400 bg-green-50 p-4 flex items-center justify-between gap-3">
           <div>
             <p className="font-bold text-green-800 text-sm">This lead is ready to become a project!</p>
@@ -322,11 +335,11 @@ export default function LeadDetailPage() {
       )}
 
       {/* If already linked to a project, show a link */}
-      {lead.project_id && (
+      {linkedProjectId && (
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 flex items-center justify-between gap-3">
           <p className="text-sm text-blue-700 font-medium">This lead has been converted to a project.</p>
           <button
-            onClick={() => router.push(`/projects/${lead.project_id}`)}
+            onClick={() => router.push(`/projects/${linkedProjectId}`)}
             className="text-sm text-blue-600 underline font-semibold"
           >
             View Project
@@ -413,7 +426,7 @@ export default function LeadDetailPage() {
             <div className="flex gap-3">
               <button onClick={() => setShowEdit(false)}
                 className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600">Cancel</button>
-              <button onClick={saveEdit} disabled={editSaving || !editForm.full_name.trim() || !editForm.phone.trim()}
+              <button onClick={saveEdit} disabled={editSaving}
                 className="flex-1 py-2.5 bg-[#1E2F52] text-white rounded-xl text-sm font-medium disabled:opacity-50">
                 {editSaving ? 'Saving...' : 'Save'}
               </button>
@@ -513,7 +526,7 @@ export default function LeadDetailPage() {
               </button>
               <button
                 onClick={handleCreateProject}
-                disabled={converting || !convertForm.client_name.trim() || !convertForm.client_phone.trim()}
+                disabled={converting}
                 className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors"
               >
                 {converting ? 'Creating...' : 'Create Project'}

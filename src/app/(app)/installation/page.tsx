@@ -11,7 +11,7 @@ import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import type { Installation } from '@/types/database';
-import { MapPin, Phone, Clock, Navigation, Camera, CheckCircle, CalendarDays, ShieldAlert } from 'lucide-react';
+import { MapPin, Phone, Clock, Navigation, Camera, CheckCircle, CalendarDays, ShieldAlert, Plus, X } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
 export default function InstallationPage() {
@@ -23,6 +23,10 @@ export default function InstallationPage() {
   const [installations, setInstallations] = useState<(Installation & { project?: { client_name: string; reference_code: string } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [newForm, setNewForm] = useState({ project_id: '', scheduled_date: '', scheduled_time: '', notes: '' });
+  const [projects, setProjects] = useState<{ id: string; client_name: string; reference_code: string; client_address: string | null; client_phone: string | null }[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const isInstaller = profile?.role === 'installer';
 
@@ -42,6 +46,37 @@ export default function InstallationPage() {
     const { data } = await query;
     setInstallations((data as typeof installations) || []);
     setLoading(false);
+  }
+
+  async function loadProjects() {
+    const { data } = await supabase
+      .from('projects')
+      .select('id, client_name, reference_code, client_address, client_phone')
+      .in('status', ['production', 'installation'])
+      .order('created_at', { ascending: false });
+    setProjects(data || []);
+  }
+
+  async function handleCreateInstallation() {
+    if (!newForm.project_id || !newForm.scheduled_date) return;
+    setSaving(true);
+    const proj = projects.find(p => p.id === newForm.project_id);
+    const { error } = await supabase.from('installations').insert({
+      project_id: newForm.project_id,
+      scheduled_date: newForm.scheduled_date,
+      scheduled_time: newForm.scheduled_time || null,
+      status: 'scheduled',
+      client_address: proj?.client_address || null,
+      client_phone: proj?.client_phone || null,
+      notes: newForm.notes || null,
+      estimated_duration_hours: 8,
+    });
+    setSaving(false);
+    if (!error) {
+      setShowNewModal(false);
+      setNewForm({ project_id: '', scheduled_date: '', scheduled_time: '', notes: '' });
+      loadInstallations();
+    }
   }
 
   async function handleCheckin(id: string, projectId: string) {
@@ -202,9 +237,14 @@ export default function InstallationPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">{t('install.title')}</h1>
-        <Button variant="secondary" size="sm" onClick={() => router.push('/installation/calendar')}>
-          <CalendarDays size={14} /> {t('install.calendar')}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="primary" size="sm" onClick={() => { loadProjects(); setShowNewModal(true); }}>
+            <Plus size={14} /> Nouvelle
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => router.push('/installation/calendar')}>
+            <CalendarDays size={14} /> {t('install.calendar')}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -227,6 +267,49 @@ export default function InstallationPage() {
         ))}
       </div>
     </div>
+
+      {/* New Installation Modal */}
+      {showNewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">Planifier une Installation</h2>
+              <button onClick={() => setShowNewModal(false)} className="p-1 hover:bg-gray-100 rounded"><X size={20} /></button>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Projet *</label>
+              <select value={newForm.project_id} onChange={e => setNewForm({ ...newForm, project_id: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                <option value="">-- Sélectionner --</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.reference_code} — {p.client_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Date *</label>
+                <input type="date" value={newForm.scheduled_date} onChange={e => setNewForm({ ...newForm, scheduled_date: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Heure</label>
+                <input type="time" value={newForm.scheduled_time} onChange={e => setNewForm({ ...newForm, scheduled_time: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Notes</label>
+              <input type="text" value={newForm.notes} onChange={e => setNewForm({ ...newForm, notes: e.target.value })}
+                placeholder="Instructions..." className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <Button variant="primary" className="w-full" onClick={handleCreateInstallation}
+              disabled={saving || !newForm.project_id || !newForm.scheduled_date}>
+              {saving ? 'Enregistrement...' : 'Planifier'}
+            </Button>
+          </div>
+        </div>
+      )}
       </RoleGuard>
   );
 }

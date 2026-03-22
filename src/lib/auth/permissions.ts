@@ -18,9 +18,15 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   // Settings — tiered access
   '/settings/users':            ['ceo'],
   '/settings/audit-log':        ['ceo'],
+  '/settings/cost-engine':         ['ceo', 'commercial_manager'],
   '/settings/recurring-expenses': ['ceo', 'commercial_manager'],
   '/settings/social-media':     ['ceo', 'community_manager'],
   '/settings':                  ['ceo', 'commercial_manager', 'workshop_manager', 'hr_manager'],
+
+  // Kitchen Configurator
+  '/kitchen/modules':    ['ceo', 'commercial_manager', 'designer', 'workshop_manager'],
+  '/kitchen/presets':    ['ceo', 'commercial_manager', 'designer'],
+  '/kitchen':            ['ceo', 'commercial_manager', 'designer', 'workshop_manager'],
 
   // CRM
   '/leads':              ['ceo', 'commercial_manager', 'community_manager'],
@@ -30,8 +36,17 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   // Projects — many roles can view
   '/projects':           ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'installer'],
 
+  // Cutting / CNC
+  '/cutting':            ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker'],
+
+  // SAW Cutting
+  '/saw':                ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker'],
+
   // Factory
-  '/production':         ['ceo', 'workshop_manager', 'workshop_worker'],
+  '/production/tasks':   ['ceo', 'workshop_manager', 'workshop_worker', 'worker'],
+  '/production/my-tasks':['ceo', 'workshop_manager', 'workshop_worker', 'worker'],
+  '/production/stations':['ceo', 'workshop_manager'],
+  '/production':         ['ceo', 'workshop_manager', 'workshop_worker', 'worker'],
   '/installation':       ['ceo', 'workshop_manager', 'installer'],
   '/documents':          ['ceo', 'workshop_manager', 'commercial_manager', 'designer'],
 
@@ -39,6 +54,9 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   '/stock':              ['ceo', 'workshop_manager'],
   '/suppliers':          ['ceo', 'workshop_manager'],
   '/purchase-orders':    ['ceo', 'workshop_manager'],
+
+  // SAV
+  '/sav':                ['ceo', 'commercial_manager', 'installer', 'workshop_manager', 'operations_manager', 'owner_admin'],
 
   // Marketing
   '/marketing':          ['ceo', 'community_manager'],
@@ -89,6 +107,8 @@ export const API_ROLES: Record<string, UserRole[]> = {
   // Print routes
   '/api/print/delivery-note':          ['ceo', 'commercial_manager'],
   '/api/print/production-order':       ['ceo', 'workshop_manager', 'commercial_manager'],
+  '/api/print/saw-instructions':       ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker'],
+  '/api/print/saw-labels':             ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker'],
 
   // Export routes
   '/api/export/panels-csv':            ['ceo', 'workshop_manager'],

@@ -6,6 +6,7 @@ import { getHrTranslations } from './hr';
 import { getStockTranslations } from './stock';
 import { getProjectsTranslations } from './projects';
 import { getChatTranslations } from './chat';
+import { getSavTranslations } from './sav';
 
 export type Locale = 'en' | 'fr' | 'ar' | 'darija';
 
@@ -26,6 +27,7 @@ function mergeDomainTranslations(): Record<Locale, Record<string, string>> {
     getStockTranslations(),
     getProjectsTranslations(),
     getChatTranslations(),
+    getSavTranslations(),
   ];
 
   const locales: Locale[] = ['en', 'fr', 'ar', 'darija'];

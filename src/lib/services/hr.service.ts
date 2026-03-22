@@ -207,7 +207,7 @@ export async function loadExpiringDocuments(): Promise<ServiceResult<any[]>> {
 
   const { data, error } = await supabase()
     .from('employee_documents')
-    .select('*, user:profiles(full_name)')
+    .select('*, user:profiles!employee_documents_user_id_fkey(full_name)')
     .not('expiry_date', 'is', null)
     .lte('expiry_date', thirtyDaysFromNow);
 

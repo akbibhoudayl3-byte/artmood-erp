@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import ErrorBanner from '@/components/ui/ErrorBanner';
 import {
   Upload, FileSpreadsheet, ChevronRight, CheckCircle,
   AlertTriangle, X, ArrowLeft, RefreshCw, Info,
@@ -93,6 +94,8 @@ export default function StockImportPage() {
   const [saving,     setSaving]     = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [errCount,   setErrCount]   = useState(0);
+  const [errorMsg,   setErrorMsg]   = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   async function fetchExisting() {
@@ -179,6 +182,8 @@ export default function StockImportPage() {
 
   // ── File parse ───────────────────────────────────────────────────────────────
   async function parseFile(file: File) {
+    setErrorMsg(null);
+    try {
     const existing = await fetchExisting();
     setExistingMap(existing);
 
@@ -187,7 +192,7 @@ export default function StockImportPage() {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const all: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-    if (all.length < 2) return;
+    if (all.length < 2) { setErrorMsg('File is empty or has no data rows.'); return; }
 
     const hdrs  = (all[0] as any[]).map(h => String(h ?? '').trim());
     const raw   = all.slice(1);
@@ -199,6 +204,9 @@ export default function StockImportPage() {
     setColumnMap(cmap);
     setRows(deriveRows(raw, hdrs, cmap, existing));
     setStep('preview');
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to parse file');
+    }
   }
 
   // ── Column map change → rebuild rows ────────────────────────────────────────
@@ -250,6 +258,7 @@ export default function StockImportPage() {
   // ── Save ─────────────────────────────────────────────────────────────────────
   async function saveImport() {
     setSaving(true);
+    setErrorMsg(null);
     let ok = 0, err = 0;
     const validRows = rows.filter(r => r._status !== 'error');
 
@@ -363,6 +372,9 @@ export default function StockImportPage() {
             </div>
           ))}
         </div>
+
+        {/* Banners (upload step) */}
+        {step === 'upload' && <ErrorBanner message={errorMsg} type="error" onDismiss={() => setErrorMsg(null)} />}
 
         {/* ── STEP 1: Upload ──────────────────────────────────────────────────── */}
         {step === 'upload' && (
@@ -491,15 +503,13 @@ export default function StockImportPage() {
               ))}
             </div>
 
-            {/* Error summary */}
-            {errRowCount > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-3.5 flex items-center gap-3">
-                <AlertTriangle size={18} className="text-red-500 flex-shrink-0" />
-                <p className="text-sm text-red-700">
-                  <strong>{errRowCount} row{errRowCount > 1 ? 's' : ''}</strong> with errors will be skipped. Fix them inline or remove them.
-                </p>
-              </div>
-            )}
+            {/* Banners */}
+            <ErrorBanner message={errorMsg} type="error" onDismiss={() => setErrorMsg(null)} />
+            <ErrorBanner message={successMsg} type="success" onDismiss={() => setSuccessMsg(null)} autoDismiss={4000} />
+            <ErrorBanner
+              message={errRowCount > 0 ? `${errRowCount} row${errRowCount > 1 ? 's' : ''} with errors will be skipped. Fix them inline or remove them.` : null}
+              type="warning"
+            />
 
             {/* Preview table */}
             <Card>

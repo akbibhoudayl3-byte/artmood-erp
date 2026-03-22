@@ -22,6 +22,10 @@ export function getFinanceTranslations(): Record<Locale, Record<string, string>>
       'finance.payments': 'Payments',
       'finance.cashflow': 'Cashflow',
       'finance.ledger': 'Ledger',
+      'finance.add_payment': 'Add Payment',
+      'finance.this_month': 'This month',
+      'finance.reference': 'Reference #',
+      'finance.add_expense': 'Add Expense',
 
       // Cheques
       'cheques.title': 'Cheques',
@@ -95,6 +99,10 @@ export function getFinanceTranslations(): Record<Locale, Record<string, string>>
       'finance.payments': 'Paiements',
       'finance.cashflow': 'Tresorerie',
       'finance.ledger': 'Grand livre',
+      'finance.add_payment': 'Ajouter paiement',
+      'finance.this_month': 'Ce mois',
+      'finance.reference': 'Reference #',
+      'finance.add_expense': 'Ajouter depense',
 
       // Cheques
       'cheques.title': 'Cheques',
@@ -168,6 +176,10 @@ export function getFinanceTranslations(): Record<Locale, Record<string, string>>
       'finance.payments': 'المدفوعات',
       'finance.cashflow': 'التدفق النقدي',
       'finance.ledger': 'دفتر الحسابات',
+      'finance.add_payment': 'إضافة دفعة',
+      'finance.this_month': 'هذا الشهر',
+      'finance.reference': 'المرجع #',
+      'finance.add_expense': 'إضافة مصروف',
 
       // Cheques
       'cheques.title': 'الشيكات',
@@ -241,6 +253,10 @@ export function getFinanceTranslations(): Record<Locale, Record<string, string>>
       'finance.payments': 'الخلصات',
       'finance.cashflow': 'التدفق ديال الفلوس',
       'finance.ledger': 'دفتر الحسابات',
+      'finance.add_payment': 'زيد خلصة',
+      'finance.this_month': 'هاد الشهر',
+      'finance.reference': 'المرجع #',
+      'finance.add_expense': 'زيد مصروف',
 
       // Cheques
       'cheques.title': 'الشيكات',

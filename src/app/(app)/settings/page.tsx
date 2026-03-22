@@ -125,6 +125,7 @@ export default function SettingsPage() {
               { label: t('settings.manage_users'), href: '/settings/users' },
               { label: t('settings.audit_log'), href: '/settings/audit-log' },
               { label: t('settings.recurring_expenses'), href: '/settings/recurring-expenses' },
+              { label: 'Cost Engine', href: '/settings/cost-engine' },
               { label: 'Social Media Accounts', href: '/settings/social-media', icon: Share2 },
             ].map(item => (
               <button

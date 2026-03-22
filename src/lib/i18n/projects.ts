@@ -75,6 +75,20 @@ export function getProjectsTranslations(): Record<Locale, Record<string, string>
       'perf.score': 'Performance Score',
       'perf.cost_variance': 'Cost Variance',
       'perf.schedule_variance': 'Schedule Variance',
+
+      // Project detail
+      'projects.edit_project': 'Edit Project',
+      'projects.project_files': 'Project Files',
+      'projects.upload_files': 'Upload Files',
+      'projects.delivery_note': 'Delivery Note',
+      'projects.latest_quote': 'Latest Quote',
+      'projects.notify_client': 'Notify Client',
+      'projects.structure': 'Structure',
+      'projects.updated_success': 'Project updated successfully',
+      'projects.deposit_50': '50% Deposit',
+      'projects.pre_install_90': '90% Pre-Install',
+      'projects.final_100': '100% Final',
+      'projects.created_on': 'Created',
     },
 
     fr: {
@@ -150,6 +164,20 @@ export function getProjectsTranslations(): Record<Locale, Record<string, string>
       'perf.score': 'Score de performance',
       'perf.cost_variance': 'Ecart de cout',
       'perf.schedule_variance': 'Ecart de delai',
+
+      // Project detail
+      'projects.edit_project': 'Modifier le projet',
+      'projects.project_files': 'Fichiers du projet',
+      'projects.upload_files': 'Telecharger des fichiers',
+      'projects.delivery_note': 'Bon de livraison',
+      'projects.latest_quote': 'Dernier devis',
+      'projects.notify_client': 'Notifier le client',
+      'projects.structure': 'Structure',
+      'projects.updated_success': 'Projet mis a jour avec succes',
+      'projects.deposit_50': 'Acompte 50%',
+      'projects.pre_install_90': 'Pre-installation 90%',
+      'projects.final_100': 'Solde 100%',
+      'projects.created_on': 'Cree le',
     },
 
     ar: {
@@ -225,6 +253,20 @@ export function getProjectsTranslations(): Record<Locale, Record<string, string>
       'perf.score': 'مؤشر الأداء',
       'perf.cost_variance': 'انحراف التكلفة',
       'perf.schedule_variance': 'انحراف الجدول',
+
+      // Project detail
+      'projects.edit_project': 'تعديل المشروع',
+      'projects.project_files': 'ملفات المشروع',
+      'projects.upload_files': 'رفع ملفات',
+      'projects.delivery_note': 'وصل التسليم',
+      'projects.latest_quote': 'آخر عرض أسعار',
+      'projects.notify_client': 'إشعار العميل',
+      'projects.structure': 'الهيكل',
+      'projects.updated_success': 'تم تحديث المشروع بنجاح',
+      'projects.deposit_50': 'عربون 50%',
+      'projects.pre_install_90': 'قبل التركيب 90%',
+      'projects.final_100': 'الدفعة النهائية 100%',
+      'projects.created_on': 'تم الإنشاء',
     },
 
     darija: {
@@ -300,6 +342,20 @@ export function getProjectsTranslations(): Record<Locale, Record<string, string>
       'perf.score': 'مؤشر الأداء',
       'perf.cost_variance': 'الفرق ف الثمن',
       'perf.schedule_variance': 'الفرق ف الوقت',
+
+      // Project detail
+      'projects.edit_project': 'عدل المشروع',
+      'projects.project_files': 'ملفات المشروع',
+      'projects.upload_files': 'طلع ملفات',
+      'projects.delivery_note': 'بون دو ليفريزون',
+      'projects.latest_quote': 'آخر دوفي',
+      'projects.notify_client': 'عيط للكليان',
+      'projects.structure': 'الستروكتير',
+      'projects.updated_success': 'المشروع تعدل بنجاح',
+      'projects.deposit_50': 'عربون 50%',
+      'projects.pre_install_90': 'قبل التركيب 90%',
+      'projects.final_100': 'الخلصة النهائية 100%',
+      'projects.created_on': 'تصاوب',
     },
   };
 }

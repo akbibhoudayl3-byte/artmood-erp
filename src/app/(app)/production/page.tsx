@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
 import Card from '@/components/ui/Card';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { PRODUCTION_STATIONS } from '@/lib/constants';
 import type { ProductionOrder, ProductionOrderStatus } from '@/types/database';
 import { useRealtime } from '@/lib/hooks/useRealtime';
 import { useLocale } from '@/lib/hooks/useLocale';

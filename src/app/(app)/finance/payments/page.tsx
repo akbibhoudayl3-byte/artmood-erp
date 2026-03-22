@@ -1,153 +1,163 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useEffect, useState, useCallback } from 'react';
 import Card, { CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import StatusBadge from '@/components/ui/StatusBadge';
+import FormModal from '@/components/ui/FormModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import EmptyState from '@/components/ui/EmptyState';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useFormModal } from '@/lib/hooks/useFormModal';
+import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
 import type { PaymentType, PaymentMethod } from '@/types/database';
 import { RoleGuard } from '@/components/auth/RoleGuard';
-import { Plus, X, Banknote, TrendingUp, AlertCircle, CheckCircle, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Banknote, TrendingUp, Pencil, Trash2, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { createLedgerEntry } from '@/lib/helpers/ledger';
+import {
+  loadPayments as loadPaymentsSvc,
+  loadActiveProjects,
+  createPayment,
+  updatePayment,
+  deletePayment,
+  syncProjectPaidAmount,
+  getProjectFinancialStatus,
+  type PaymentWithProject,
+  type CreatePaymentData,
+  type ProjectFinancialStatus,
+} from '@/lib/services/payment.service';
 
 const PAYMENT_TYPES: PaymentType[] = ['deposit', 'pre_installation', 'final', 'other'];
 const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'cheque', 'bank_transfer', 'card', 'other'];
 
-interface PaymentWithProject {
-  id: string;
-  project_id: string;
-  amount: number;
-  payment_type: PaymentType;
-  payment_method: PaymentMethod | null;
-  reference_number: string | null;
-  notes: string | null;
-  received_by: string | null;
-  received_at: string;
-  created_at: string;
-  project?: { client_name: string; reference_code: string } | null;
-}
+const INITIAL_FORM = {
+  project_id: '',
+  amount: '',
+  payment_type: 'deposit' as PaymentType,
+  payment_method: 'cash' as PaymentMethod,
+  received_at: new Date().toISOString().split('T')[0],
+  reference_number: '',
+  notes: '',
+  editingId: null as string | null,
+  oldAmount: 0,
+  oldProjectId: '',
+};
 
 export default function PaymentsPage() {
   const { t } = useLocale();
   const { profile } = useAuth();
-  const supabase = createClient();
+
+  // Data
   const [payments, setPayments] = useState<PaymentWithProject[]>([]);
-  const [projects, setProjects] = useState<{ id: string; client_name: string; reference_code: string }[]>([]);
+  const [projects, setProjects] = useState<{ id: string; client_name: string; reference_code: string; total_amount: number; paid_amount: number }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+
+  // Financial status for selected project in form
+  const [financialStatus, setFinancialStatus] = useState<ProjectFinancialStatus | null>(null);
+  const [loadingFinancial, setLoadingFinancial] = useState(false);
+
+  // Banners
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Form modal
+  const modal = useFormModal(INITIAL_FORM);
   const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-  const [loadError, setLoadError] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const [editingPayment, setEditingPayment] = useState<PaymentWithProject | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  // Confirm dialog
+  const confirm = useConfirmDialog();
 
-  // Form state
-  const [projectId, setProjectId] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paymentType, setPaymentType] = useState<PaymentType>('deposit');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
-  const [receivedAt, setReceivedAt] = useState(new Date().toISOString().split('T')[0]);
-  const [referenceNumber, setReferenceNumber] = useState('');
-  const [notes, setNotes] = useState('');
+  // ── Load data ──────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const [paymentsRes, projectsRes] = await Promise.all([
+      loadPaymentsSvc(),
+      loadActiveProjects(),
+    ]);
 
-  useEffect(() => {
-    loadPayments();
-    loadProjects();
-  }, []);
-
-  async function loadPayments() {
-    const { data, error } = await supabase
-      .from('payments')
-      .select('*, project:projects(client_name, reference_code)')
-      .order('received_at', { ascending: false })
-      .limit(100);
-    if (error) {
-      setLoadError('Failed to load payments: ' + error.message);
+    if (paymentsRes.success) {
+      setPayments(paymentsRes.data || []);
     } else {
-      setPayments((data as PaymentWithProject[]) || []);
+      setErrorMsg(paymentsRes.error || 'Failed to load payments');
+    }
+    if (projectsRes.success) {
+      setProjects(projectsRes.data || []);
     }
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // ── Load financial status for a project ──────────────────────────────
+  async function loadFinancialStatus(projectId: string, editingPaymentAmount?: number) {
+    if (!projectId) { setFinancialStatus(null); return; }
+    setLoadingFinancial(true);
+    const res = await getProjectFinancialStatus(projectId);
+    if (res.success && res.data) {
+      const fs = { ...res.data };
+      // If editing, the current payment's amount isn't "new" — add it back to remaining
+      if (editingPaymentAmount && editingPaymentAmount > 0) {
+        fs.paid_amount = Math.max(0, fs.paid_amount - editingPaymentAmount);
+        fs.remaining = Math.max(0, fs.total_amount - fs.paid_amount);
+        fs.max_allowed = fs.remaining;
+        fs.is_fully_paid = fs.total_amount > 0 && fs.paid_amount >= fs.total_amount;
+        fs.overpayment = Math.max(0, fs.paid_amount - fs.total_amount);
+      }
+      setFinancialStatus(fs);
+    } else {
+      setFinancialStatus(null);
+    }
+    setLoadingFinancial(false);
   }
 
-  async function loadProjects() {
-    const { data } = await supabase
-      .from('projects')
-      .select('id, client_name, reference_code')
-      .in('status', ['measurements', 'design', 'client_validation', 'production', 'installation'])
-      .order('created_at', { ascending: false });
-    setProjects(data || []);
-  }
-
-  function resetForm() {
-    setAmount('');
-    setProjectId('');
-    setReferenceNumber('');
-    setNotes('');
-    setPaymentType('deposit');
-    setPaymentMethod('cash');
-    setReceivedAt(new Date().toISOString().split('T')[0]);
-    setFormError('');
-    setShowForm(false);
-    setEditingPayment(null);
-  }
-
+  // ── Open edit ──────────────────────────────────────────────────────────
   function openEdit(p: PaymentWithProject) {
-    setEditingPayment(p);
-    setProjectId(p.project_id);
-    setAmount(String(p.amount));
-    setPaymentType(p.payment_type);
-    setPaymentMethod(p.payment_method || 'cash');
-    setReceivedAt(p.received_at ? p.received_at.split('T')[0] : new Date().toISOString().split('T')[0]);
-    setReferenceNumber(p.reference_number || '');
-    setNotes(p.notes || '');
-    setFormError('');
-    setShowForm(true);
+    modal.openEdit({
+      project_id: p.project_id,
+      amount: String(p.amount),
+      payment_type: p.payment_type,
+      payment_method: p.payment_method || 'cash',
+      received_at: p.received_at ? p.received_at.split('T')[0] : new Date().toISOString().split('T')[0],
+      reference_number: p.reference_number || '',
+      notes: p.notes || '',
+      editingId: p.id,
+      oldAmount: p.amount,
+      oldProjectId: p.project_id,
+    });
+    setFormError(null);
+    // Load financial status accounting for the payment being edited
+    loadFinancialStatus(p.project_id, p.amount);
   }
 
-  async function handleDelete(paymentId: string, pProjectId: string, pAmount: number) {
-    if (!window.confirm('Delete this payment? This will also update the project total.')) return;
-    setDeleting(paymentId);
-
-    const { error } = await supabase.from('payments').delete().eq('id', paymentId);
-    if (error) {
-      setSuccessMsg('');
-      setLoadError('Failed to delete: ' + error.message);
-      setDeleting(null);
-      return;
-    }
-
-    // Update project paid_amount (subtract)
-    const { data: project } = await supabase
-      .from('projects')
-      .select('paid_amount, total_amount')
-      .eq('id', pProjectId)
-      .single();
-    if (project) {
-      const newPaid = Math.max(0, (project.paid_amount || 0) - pAmount);
-      const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
-      await supabase.from('projects').update({
-        paid_amount: newPaid,
-        deposit_paid: pct >= 0.5,
-        pre_install_paid: pct >= 0.9,
-        final_paid: pct >= 1.0,
-        updated_at: new Date().toISOString(),
-      }).eq('id', pProjectId);
-    }
-
-    setDeleting(null);
-    setSuccessMsg('Payment deleted.');
-    setTimeout(() => setSuccessMsg(''), 3000);
-    loadPayments();
+  // ── Handle delete ──────────────────────────────────────────────────────
+  function handleDeleteClick(p: PaymentWithProject) {
+    confirm.open({
+      title: 'Delete Payment',
+      message: 'Delete this payment? This will also update the project total.',
+      onConfirm: async () => {
+        const res = await deletePayment(p.id, p.project_id, Number(p.amount));
+        if (!res.success) {
+          setErrorMsg(res.error || 'Failed to delete payment');
+          return;
+        }
+        setSuccessMsg('Payment deleted.');
+        fetchData();
+      },
+    });
   }
 
+  // ── Handle save (create / update) ──────────────────────────────────────
   async function handleSave() {
+    const { project_id, amount, payment_type, payment_method, received_at, reference_number, notes, editingId, oldAmount, oldProjectId } = modal.formData;
+
     // Validation
-    if (!projectId) {
+    if (!project_id) {
       setFormError('Please select a project.');
       return;
     }
@@ -156,137 +166,87 @@ export default function PaymentsPage() {
       setFormError('Amount must be greater than zero.');
       return;
     }
-    if (!receivedAt) {
+    if (!received_at) {
       setFormError('Payment date is required.');
       return;
     }
 
     setSaving(true);
-    setFormError('');
+    setFormError(null);
 
-    if (editingPayment) {
-      // UPDATE existing payment
-      const oldAmount = editingPayment.amount;
-      const { error: updateErr } = await supabase.from('payments').update({
-        project_id: projectId,
+    if (editingId) {
+      // UPDATE
+      const res = await updatePayment(editingId, {
+        project_id,
         amount: parsedAmount,
-        payment_type: paymentType,
-        payment_method: paymentMethod,
-        received_at: new Date(receivedAt).toISOString(),
-        reference_number: referenceNumber || null,
+        payment_type,
+        payment_method,
+        received_at,
+        reference_number: reference_number || null,
         notes: notes || null,
-      }).eq('id', editingPayment.id);
+      });
 
-      if (updateErr) {
-        setFormError('Failed to update: ' + updateErr.message);
+      if (!res.success) {
+        setFormError(res.error || 'Failed to update payment');
         setSaving(false);
         return;
       }
 
-      // Adjust project paid_amount if amount changed
-      if (parsedAmount !== oldAmount || projectId !== editingPayment.project_id) {
-        // Subtract old amount from old project
-        const { data: oldProject } = await supabase
-          .from('projects')
-          .select('paid_amount, total_amount')
-          .eq('id', editingPayment.project_id)
-          .single();
-        if (oldProject) {
-          const oldPaid = Math.max(0, (oldProject.paid_amount || 0) - oldAmount);
-          const oldPct = oldProject.total_amount > 0 ? oldPaid / oldProject.total_amount : 0;
-          await supabase.from('projects').update({
-            paid_amount: oldPaid,
-            deposit_paid: oldPct >= 0.5,
-            pre_install_paid: oldPct >= 0.9,
-            final_paid: oldPct >= 1.0,
-          }).eq('id', editingPayment.project_id);
-        }
-        // Add new amount to new project
-        const { data: newProject } = await supabase
-          .from('projects')
-          .select('paid_amount, total_amount')
-          .eq('id', projectId)
-          .single();
-        if (newProject) {
-          const newPaid = (newProject.paid_amount || 0) + parsedAmount;
-          const newPct = newProject.total_amount > 0 ? newPaid / newProject.total_amount : 0;
-          await supabase.from('projects').update({
-            paid_amount: newPaid,
-            deposit_paid: newPct >= 0.5,
-            pre_install_paid: newPct >= 0.9,
-            final_paid: newPct >= 1.0,
-          }).eq('id', projectId);
+      // Sync paid_amount if amount or project changed
+      if (parsedAmount !== oldAmount || project_id !== oldProjectId) {
+        await syncProjectPaidAmount(oldProjectId);
+        if (project_id !== oldProjectId) {
+          await syncProjectPaidAmount(project_id);
         }
       }
 
-      setEditingPayment(null);
-      resetForm();
+      modal.close();
       setSaving(false);
       setSuccessMsg('Payment updated successfully.');
-      setTimeout(() => setSuccessMsg(''), 4000);
-      loadPayments();
+      fetchData();
       return;
     }
 
-    // INSERT new payment
-    const { data: payment, error: insertErr } = await supabase.from('payments').insert({
-      project_id: projectId,
+    // CREATE
+    const paymentData: CreatePaymentData = {
+      project_id,
       amount: parsedAmount,
-      payment_type: paymentType,
-      payment_method: paymentMethod,
-      received_at: new Date(receivedAt).toISOString(),
-      reference_number: referenceNumber || null,
-      notes: notes || null,
+      payment_type,
+      payment_method,
+      received_at: new Date(received_at).toISOString(),
+      reference_number: reference_number || undefined,
+      notes: notes || undefined,
       received_by: profile?.id,
-    }).select('id').single();
+    };
 
-    if (insertErr) {
-      setFormError('Failed to record payment: ' + insertErr.message);
+    const res = await createPayment(paymentData);
+    if (!res.success) {
+      setFormError(res.error || 'Failed to record payment');
       setSaving(false);
       return;
-    }
-
-    // Update project paid_amount (denormalized for performance)
-    const { data: project } = await supabase
-      .from('projects')
-      .select('paid_amount, total_amount')
-      .eq('id', projectId)
-      .single();
-
-    if (project) {
-      const newPaid = (project.paid_amount || 0) + parsedAmount;
-      const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
-      await supabase.from('projects').update({
-        paid_amount: newPaid,
-        deposit_paid: pct >= 0.5,
-        pre_install_paid: pct >= 0.9,
-        final_paid: pct >= 1.0,
-        updated_at: new Date().toISOString(),
-      }).eq('id', projectId);
     }
 
     // Create ledger entry for income
     await createLedgerEntry({
-      date: new Date(receivedAt).toISOString(),
+      date: new Date(received_at).toISOString(),
       type: 'income',
-      category: paymentType,
+      category: payment_type,
       amount: parsedAmount,
-      description: `Payment from ${projects.find(p => p.id === projectId)?.client_name || 'client'}`,
-      project_id: projectId,
+      description: `Payment from ${projects.find(p => p.id === project_id)?.client_name || 'client'}`,
+      project_id,
       source_module: 'payments',
-      source_id: payment?.id,
-      payment_method: paymentMethod,
+      source_id: res.data?.id,
+      payment_method,
       created_by: profile?.id || null,
     });
 
-    setEditingPayment(null);
-    resetForm();
+    modal.close();
     setSaving(false);
     setSuccessMsg('Payment recorded successfully.');
-    setTimeout(() => setSuccessMsg(''), 4000);
-    loadPayments();
+    fetchData();
   }
 
+  // ── Computed ───────────────────────────────────────────────────────────
   const now = new Date();
   const totalThisMonth = payments
     .filter(p => {
@@ -298,6 +258,7 @@ export default function PaymentsPage() {
   const fmtAmount = (n: number) =>
     new Intl.NumberFormat('fr-MA', { style: 'currency', currency: 'MAD', minimumFractionDigits: 0 }).format(n);
 
+  // ── Loading skeleton ──────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="space-y-3">
@@ -318,23 +279,14 @@ export default function PaymentsPage() {
               <span className="font-semibold text-emerald-600">{fmtAmount(totalThisMonth)}</span>
             </p>
           </div>
-          <Button onClick={() => { resetForm(); setShowForm(true); }}>
+          <Button onClick={() => { modal.openCreate({ received_at: new Date().toISOString().split('T')[0] }); setFormError(null); setFinancialStatus(null); }}>
             <Plus size={18} /> {t('finance.add_payment') || 'Add Payment'}
           </Button>
         </div>
 
         {/* Global banners */}
-        {successMsg && (
-          <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-xl px-4 py-3 text-sm">
-            <CheckCircle size={16} /> {successMsg}
-          </div>
-        )}
-        {loadError && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-            <AlertCircle size={16} /> {loadError}
-            <button onClick={() => setLoadError('')} className="ml-auto"><X size={14} /></button>
-          </div>
-        )}
+        <ErrorBanner message={successMsg} type="success" onDismiss={() => setSuccessMsg(null)} autoDismiss={4000} />
+        <ErrorBanner message={errorMsg} type="error" onDismiss={() => setErrorMsg(null)} />
 
         {/* Summary */}
         <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-100">
@@ -370,9 +322,11 @@ export default function PaymentsPage() {
               <tbody className="divide-y divide-[#F0EDE8]">
                 {payments.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-12 text-center text-[#64648B]">
-                      <Banknote size={32} className="mx-auto mb-2 opacity-30" />
-                      <p>{t('common.no_results') || 'No payments found'}</p>
+                    <td colSpan={6}>
+                      <EmptyState
+                        icon={<Banknote size={32} className="opacity-30" />}
+                        title={t('common.no_results') || 'No payments found'}
+                      />
                     </td>
                   </tr>
                 ) : payments.map(p => (
@@ -382,12 +336,12 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div>
-                        <p className="font-medium text-[#1a1a2e]">{p.project?.client_name || '—'}</p>
+                        <p className="font-medium text-[#1a1a2e]">{p.project?.client_name || '\u2014'}</p>
                         <p className="text-xs text-[#64648B]">{p.project?.reference_code}</p>
                       </div>
                     </td>
                     <td className="px-5 py-3.5"><StatusBadge status={p.payment_type} /></td>
-                    <td className="px-5 py-3.5 text-[#64648B] text-xs">{p.payment_method || '—'}</td>
+                    <td className="px-5 py-3.5 text-[#64648B] text-xs">{p.payment_method || '\u2014'}</td>
                     <td className="px-5 py-3.5 text-right font-semibold text-emerald-600">
                       +{fmtAmount(Number(p.amount))}
                     </td>
@@ -397,9 +351,8 @@ export default function PaymentsPage() {
                           <Pencil size={14} />
                         </button>
                         <button
-                          onClick={() => handleDelete(p.id, p.project_id, Number(p.amount))}
-                          disabled={deleting === p.id}
-                          className="p-1.5 rounded text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                          onClick={() => handleDeleteClick(p)}
+                          className="p-1.5 rounded text-red-500 hover:bg-red-50 transition-colors"
                           title="Delete"
                         >
                           <Trash2 size={14} />
@@ -425,7 +378,7 @@ export default function PaymentsPage() {
                       <span className="text-[11px] text-[#64648B]">{p.payment_method}</span>
                     )}
                   </div>
-                  <p className="text-sm font-medium text-[#1a1a2e] truncate">{p.project?.client_name || '—'}</p>
+                  <p className="text-sm font-medium text-[#1a1a2e] truncate">{p.project?.client_name || '\u2014'}</p>
                   <p className="text-xs text-[#64648B] mt-0.5">
                     {new Date(p.received_at).toLocaleDateString('fr-MA', { weekday: 'short', day: 'numeric', month: 'short' })}
                   </p>
@@ -439,9 +392,8 @@ export default function PaymentsPage() {
                       <Pencil size={13} />
                     </button>
                     <button
-                      onClick={() => handleDelete(p.id, p.project_id, Number(p.amount))}
-                      disabled={deleting === p.id}
-                      className="p-1 rounded text-red-500 hover:bg-red-50 disabled:opacity-40"
+                      onClick={() => handleDeleteClick(p)}
+                      className="p-1 rounded text-red-500 hover:bg-red-50"
                       title="Delete"
                     >
                       <Trash2 size={13} />
@@ -452,151 +404,232 @@ export default function PaymentsPage() {
             </Card>
           ))}
           {payments.length === 0 && (
-            <div className="text-center py-12">
-              <Banknote size={48} className="mx-auto text-[#E8E5E0] mb-3" />
-              <p className="text-[#64648B]">{t('common.no_results') || 'No payments yet'}</p>
-            </div>
+            <EmptyState
+              icon={<Banknote size={48} />}
+              title={t('common.no_results') || 'No payments yet'}
+            />
           )}
         </div>
       </div>
 
-      {/* Add Payment Drawer */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={resetForm}
-          />
-          <div className="relative w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-[#1a1a2e]">
-                {editingPayment ? 'Edit Payment' : (t('finance.add_payment') || 'Add Payment')}
-              </h2>
-              <button
-                onClick={resetForm}
-                className="p-2 hover:bg-[#F5F3F0] rounded-xl transition-colors"
-              >
-                <X size={20} className="text-[#64648B]" />
-              </button>
-            </div>
+      {/* Form Modal (Add / Edit) */}
+      <FormModal
+        isOpen={modal.isOpen}
+        onClose={() => { modal.close(); setFormError(null); }}
+        title={modal.mode === 'edit' ? 'Edit Payment' : (t('finance.add_payment') || 'Add Payment')}
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" className="flex-1" onClick={() => { modal.close(); setFormError(null); }}>
+              {t('common.cancel') || 'Cancel'}
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleSave}
+              disabled={saving || (financialStatus?.is_fully_paid && financialStatus?.total_amount > 0)}
+              loading={saving}
+            >
+              {modal.mode === 'edit' ? 'Update' : (t('common.save') || 'Save')}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <ErrorBanner message={formError} type="error" onDismiss={() => setFormError(null)} />
 
-            {/* Inline form error */}
-            {formError && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs">
-                <AlertCircle size={13} /> {formError}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
+              {t('common.project')} *
+            </label>
+            <select
+              value={modal.formData.project_id}
+              onChange={e => {
+                modal.setField('project_id', e.target.value);
+                setFormError(null);
+                loadFinancialStatus(e.target.value, modal.formData.editingId ? modal.formData.oldAmount : undefined);
+              }}
+              className="w-full px-3.5 py-2.5 border border-[#E8E5E0] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C9956B]/20 focus:border-[#C9956B]"
+            >
+              <option value="">-- Select project --</option>
+              {projects.map(pr => (
+                <option key={pr.id} value={pr.id}>
+                  {pr.client_name} · {pr.reference_code}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ── Financial Status Panel ── */}
+          {modal.formData.project_id && financialStatus && (
+            <div className={`rounded-xl border p-3 space-y-2 ${
+              financialStatus.is_fully_paid
+                ? 'bg-red-50 border-red-200'
+                : financialStatus.overpayment > 0
+                  ? 'bg-orange-50 border-orange-200'
+                  : financialStatus.remaining === 0 && financialStatus.total_amount === 0
+                    ? 'bg-gray-50 border-gray-200'
+                    : 'bg-emerald-50 border-emerald-200'
+            }`}>
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+                {financialStatus.is_fully_paid ? (
+                  <><ShieldAlert size={14} className="text-red-500" /><span className="text-red-700">Project Fully Paid</span></>
+                ) : financialStatus.overpayment > 0 ? (
+                  <><AlertTriangle size={14} className="text-orange-500" /><span className="text-orange-700">Overpayment Detected</span></>
+                ) : (
+                  <><CheckCircle size={14} className="text-emerald-500" /><span className="text-emerald-700">Financial Status</span></>
+                )}
               </div>
-            )}
 
+              {financialStatus.total_amount > 0 && (
+                <>
+                  {/* Progress bar */}
+                  <div className="w-full h-2 bg-white/70 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        financialStatus.is_fully_paid ? 'bg-red-400' : financialStatus.paid_amount / financialStatus.total_amount > 0.9 ? 'bg-amber-400' : 'bg-emerald-400'
+                      }`}
+                      style={{ width: `${Math.min(100, (financialStatus.paid_amount / financialStatus.total_amount) * 100)}%` }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-[10px] text-[#64648B] uppercase">Total</p>
+                      <p className="text-xs font-bold text-[#1a1a2e]">{fmtAmount(financialStatus.total_amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#64648B] uppercase">Paid</p>
+                      <p className="text-xs font-bold text-emerald-600">{fmtAmount(financialStatus.paid_amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#64648B] uppercase">Remaining</p>
+                      <p className={`text-xs font-bold ${financialStatus.remaining > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                        {fmtAmount(financialStatus.remaining)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {financialStatus.overpayment > 0 && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-100 rounded-lg">
+                      <AlertTriangle size={12} className="text-orange-600 shrink-0" />
+                      <span className="text-[11px] font-medium text-orange-700">
+                        Overpayment: {fmtAmount(financialStatus.overpayment)}
+                      </span>
+                    </div>
+                  )}
+
+                  {financialStatus.is_fully_paid && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-red-100 rounded-lg">
+                      <ShieldAlert size={12} className="text-red-600 shrink-0" />
+                      <span className="text-[11px] font-medium text-red-700">
+                        No further payments allowed for this project.
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {financialStatus.total_amount === 0 && (
+                <p className="text-[11px] text-[#64648B]">Project has no total amount set. Financial limits not enforced.</p>
+              )}
+            </div>
+          )}
+          {loadingFinancial && (
+            <div className="text-xs text-[#64648B] animate-pulse">Loading financial status...</div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
-                {t('common.project')} *
+                {t('common.amount')} (MAD) *
               </label>
+              <Input
+                type="number"
+                placeholder={financialStatus?.max_allowed ? `Max: ${financialStatus.max_allowed.toFixed(2)}` : '0.00'}
+                value={modal.formData.amount}
+                onChange={e => { modal.setField('amount', e.target.value); setFormError(null); }}
+                min="0.01"
+                step="0.01"
+                max={financialStatus?.total_amount && financialStatus.total_amount > 0 ? financialStatus.max_allowed : undefined}
+              />
+              {financialStatus && financialStatus.max_allowed > 0 && financialStatus.total_amount > 0 && (
+                <p className="text-[10px] text-[#64648B]">Max allowed: {fmtAmount(financialStatus.max_allowed)}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
+                {t('common.date')} *
+              </label>
+              <Input
+                type="date"
+                value={modal.formData.received_at}
+                onChange={e => modal.setField('received_at', e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">Type</label>
               <select
-                value={projectId}
-                onChange={e => { setProjectId(e.target.value); setFormError(''); }}
+                value={modal.formData.payment_type}
+                onChange={e => modal.setField('payment_type', e.target.value as PaymentType)}
                 className="w-full px-3.5 py-2.5 border border-[#E8E5E0] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C9956B]/20 focus:border-[#C9956B]"
               >
-                <option value="">-- Select project --</option>
-                {projects.map(pr => (
-                  <option key={pr.id} value={pr.id}>
-                    {pr.client_name} · {pr.reference_code}
-                  </option>
+                {PAYMENT_TYPES.map(pt => (
+                  <option key={pt} value={pt}>{pt}</option>
                 ))}
               </select>
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
-                  {t('common.amount')} (MAD) *
-                </label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={e => { setAmount(e.target.value); setFormError(''); }}
-                  min="0.01"
-                  step="0.01"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
-                  {t('common.date')} *
-                </label>
-                <Input
-                  type="date"
-                  value={receivedAt}
-                  onChange={e => setReceivedAt(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">Type</label>
-                <select
-                  value={paymentType}
-                  onChange={e => setPaymentType(e.target.value as PaymentType)}
-                  className="w-full px-3.5 py-2.5 border border-[#E8E5E0] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C9956B]/20 focus:border-[#C9956B]"
-                >
-                  {PAYMENT_TYPES.map(pt => (
-                    <option key={pt} value={pt}>{pt}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
-                  {t('finance.payment_method')}
-                </label>
-                <select
-                  value={paymentMethod}
-                  onChange={e => setPaymentMethod(e.target.value as PaymentMethod)}
-                  className="w-full px-3.5 py-2.5 border border-[#E8E5E0] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C9956B]/20 focus:border-[#C9956B]"
-                >
-                  {PAYMENT_METHODS.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
             <div className="space-y-1">
               <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
-                {t('finance.reference') || 'Reference #'}
+                {t('finance.payment_method')}
               </label>
-              <Input
-                placeholder="CHQ-001, REF-..."
-                value={referenceNumber}
-                onChange={e => setReferenceNumber(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
-                {t('common.notes') || 'Notes'}
-              </label>
-              <Input
-                placeholder={t('common.notes') || 'Notes...'}
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button variant="secondary" className="flex-1" onClick={resetForm}>
-                {t('common.cancel') || 'Cancel'}
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={handleSave}
-                disabled={saving || !amount || !projectId}
+              <select
+                value={modal.formData.payment_method}
+                onChange={e => modal.setField('payment_method', e.target.value as PaymentMethod)}
+                className="w-full px-3.5 py-2.5 border border-[#E8E5E0] rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C9956B]/20 focus:border-[#C9956B]"
               >
-                {saving ? (t('common.saving') || 'Saving...') : editingPayment ? 'Update' : (t('common.save') || 'Save')}
-              </Button>
+                {PAYMENT_METHODS.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
             </div>
           </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
+              {t('finance.reference') || 'Reference #'}
+            </label>
+            <Input
+              placeholder="CHQ-001, REF-..."
+              value={modal.formData.reference_number}
+              onChange={e => modal.setField('reference_number', e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#64648B] uppercase tracking-wider">
+              {t('common.notes') || 'Notes'}
+            </label>
+            <Input
+              placeholder={t('common.notes') || 'Notes...'}
+              value={modal.formData.notes}
+              onChange={e => modal.setField('notes', e.target.value)}
+            />
+          </div>
         </div>
-      )}
+      </FormModal>
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        isOpen={confirm.isOpen}
+        onClose={confirm.close}
+        onConfirm={confirm.confirm}
+        title={confirm.title}
+        message={confirm.message}
+        variant="danger"
+        loading={confirm.loading}
+      />
     </RoleGuard>
   );
 }

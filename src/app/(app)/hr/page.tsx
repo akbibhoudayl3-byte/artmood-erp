@@ -1,21 +1,32 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import EmptyState from '@/components/ui/EmptyState';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import type { Attendance, Profile, EmployeeDocument } from '@/types/database';
 import { ROLE_LABELS } from '@/lib/constants';
 import { useLocale } from '@/lib/hooks/useLocale';
 import {
-  UserCheck, Clock, AlertCircle, FileText, ChevronRight,
+  UserCheck, Clock, AlertCircle, ChevronRight,
   LogIn, LogOut, AlertTriangle, Users, Calendar, TrendingUp,
-  Search, Filter, Download, CheckCheck, CalendarOff, Timer
+  Search, Download, CheckCheck, CalendarOff, Timer
 } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import {
+  loadAttendance as loadAttendanceSvc,
+  loadAttendanceRange,
+  loadEmployees as loadEmployeesSvc,
+  checkIn as checkInSvc,
+  bulkCheckIn as bulkCheckInSvc,
+  loadExpiringDocuments,
+} from '@/lib/services/hr.service';
 
 type Tab = 'today' | 'weekly' | 'monthly';
 
@@ -23,7 +34,6 @@ export default function HRPage() {
   const router = useRouter();
   const { profile: currentUser } = useAuth();
   const { t } = useLocale();
-  const supabase = createClient();
 
   const [attendance, setAttendance] = useState<(Attendance & { user?: Profile })[]>([]);
   const [weeklyAttendance, setWeeklyAttendance] = useState<Attendance[]>([]);
@@ -36,10 +46,16 @@ export default function HRPage() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
 
+  // Banners
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Confirm dialog for bulk check-in
+  const confirm = useConfirmDialog();
+
   const today = new Date().toISOString().split('T')[0];
   const canManageHR = ['ceo', 'hr_manager'].includes(currentUser?.role || '');
 
-  // Date helpers
   const weekStart = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - 6);
@@ -52,66 +68,36 @@ export default function HRPage() {
     return d.toISOString().split('T')[0];
   }, []);
 
-  useEffect(() => { loadData(); }, []);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     const [attRes, empRes, weekRes, monthRes, docsRes] = await Promise.all([
-      supabase
-        .from('attendance')
-        .select('*, user:profiles(full_name, role)')
-        .eq('date', today),
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('is_active', true),
-      supabase
-        .from('attendance')
-        .select('*')
-        .gte('date', weekStart)
-        .lte('date', today),
-      supabase
-        .from('attendance')
-        .select('*')
-        .gte('date', monthStart)
-        .lte('date', today),
-      supabase
-        .from('employee_documents')
-        .select('*, user:profiles(full_name)')
-        .not('expiry_date', 'is', null)
-        .lte('expiry_date', new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]),
+      loadAttendanceSvc(today),
+      loadEmployeesSvc(),
+      loadAttendanceRange(weekStart, today),
+      loadAttendanceRange(monthStart, today),
+      loadExpiringDocuments(),
     ]);
 
-    setAttendance((attRes.data as typeof attendance) || []);
-    setEmployees(empRes.data || []);
-    setWeeklyAttendance(weekRes.data || []);
-    setMonthlyAttendance(monthRes.data || []);
-    setExpiringDocs((docsRes.data as typeof expiringDocs) || []);
+    if (attRes.success) setAttendance((attRes.data as typeof attendance) || []);
+    else setErrorMsg(attRes.error || 'Failed to load attendance');
+
+    if (empRes.success) setEmployees(empRes.data || []);
+    if (weekRes.success) setWeeklyAttendance(weekRes.data || []);
+    if (monthRes.success) setMonthlyAttendance(monthRes.data || []);
+    if (docsRes.success) setExpiringDocs((docsRes.data as typeof expiringDocs) || []);
+
     setLoading(false);
-  }
+  }, [today, weekStart, monthStart]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   // Check in / check out
   async function handleCheckIn(userId: string) {
     setCheckingIn(userId);
-    const now = new Date();
-    const isLate = now.getHours() >= 9; // After 9 AM = late
-
     const existing = attendance.find(a => a.user_id === userId);
-    if (existing) {
-      // Check out
-      await supabase
-        .from('attendance')
-        .update({ check_out: now.toISOString() })
-        .eq('id', existing.id);
-    } else {
-      // Check in
-      await supabase
-        .from('attendance')
-        .insert({
-          user_id: userId,
-          date: today,
-          check_in: now.toISOString(),
-          status: isLate ? 'late' : 'present',
-        });
+    const res = await checkInSvc(userId, existing || null);
+
+    if (!res.success) {
+      setErrorMsg(res.error || 'Failed to check in/out');
     }
 
     await loadData();
@@ -119,29 +105,30 @@ export default function HRPage() {
   }
 
   // Bulk check-in all employees
-  async function handleBulkCheckIn() {
-    if (!confirm('Check in all employees who haven\'t checked in yet?')) return;
-    setCheckingIn('bulk');
-    const now = new Date();
-    const isLate = now.getHours() >= 9;
-    const unchecked = filteredEmployees.filter(e => !attendance.find(a => a.user_id === e.id));
+  function handleBulkCheckInClick() {
+    confirm.open({
+      title: 'Bulk Check-In',
+      message: "Check in all employees who haven't checked in yet?",
+      onConfirm: async () => {
+        setCheckingIn('bulk');
+        const unchecked = filteredEmployees.filter(e => !attendance.find(a => a.user_id === e.id));
 
-    if (unchecked.length === 0) {
-      setCheckingIn(null);
-      return;
-    }
+        if (unchecked.length === 0) {
+          setCheckingIn(null);
+          return;
+        }
 
-    await supabase.from('attendance').insert(
-      unchecked.map(e => ({
-        user_id: e.id,
-        date: today,
-        check_in: now.toISOString(),
-        status: isLate ? 'late' : 'present',
-      }))
-    );
+        const res = await bulkCheckInSvc(unchecked.map(e => e.id));
+        if (!res.success) {
+          setErrorMsg(res.error || 'Failed to bulk check in');
+        } else {
+          setSuccessMsg(`${unchecked.length} employees checked in.`);
+        }
 
-    await loadData();
-    setCheckingIn(null);
+        await loadData();
+        setCheckingIn(null);
+      },
+    });
   }
 
   // Export monthly attendance to CSV
@@ -180,7 +167,6 @@ export default function HRPage() {
   const absentCount = workforceEmployees.length - presentCount;
   const lateCount = attendance.filter(a => a.status === 'late').length;
 
-  // Hours worked today
   const totalHoursToday = attendance.reduce((sum, a) => {
     if (a.check_in && a.check_out) {
       const diff = new Date(a.check_out).getTime() - new Date(a.check_in).getTime();
@@ -193,14 +179,12 @@ export default function HRPage() {
     return sum;
   }, 0);
 
-  // Filter employees
   const filteredEmployees = employees.filter(e => {
     if (search && !e.full_name.toLowerCase().includes(search.toLowerCase())) return false;
     if (roleFilter !== 'all' && e.role !== roleFilter) return false;
     return true;
   });
 
-  // Monthly stats per employee
   function getMonthlyStats(userId: string) {
     const records = monthlyAttendance.filter(a => a.user_id === userId);
     const present = records.filter(a => a.status === 'present' || a.status === 'late').length;
@@ -215,7 +199,6 @@ export default function HRPage() {
     return { present, late, totalHours, overtime };
   }
 
-  // Weekly data (last 7 days)
   const weekDays = useMemo(() => {
     const days: string[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -235,7 +218,6 @@ export default function HRPage() {
     };
   }
 
-  // Unique roles for filter
   const uniqueRoles = [...new Set(employees.map(e => e.role))];
 
   if (loading) return <div className="space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-24 skeleton" />)}</div>;
@@ -243,6 +225,10 @@ export default function HRPage() {
   return (
     <RoleGuard allowedRoles={['ceo', 'hr_manager'] as any[]}>
     <div className="space-y-4">
+      {/* Banners */}
+      <ErrorBanner message={successMsg} type="success" onDismiss={() => setSuccessMsg(null)} autoDismiss={3000} />
+      <ErrorBanner message={errorMsg} type="error" onDismiss={() => setErrorMsg(null)} />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#1a1a2e] tracking-tight">{t('hr.title')}</h1>
@@ -365,13 +351,12 @@ export default function HRPage() {
       {/* TODAY TAB */}
       {tab === 'today' && (
         <>
-          {/* Bulk Check-In */}
           {canManageHR && (
             <div className="flex gap-2">
               <Button
                 size="sm"
                 variant="success"
-                onClick={handleBulkCheckIn}
+                onClick={handleBulkCheckInClick}
                 loading={checkingIn === 'bulk'}
                 disabled={!filteredEmployees.some(e => !attendance.find(a => a.user_id === e.id))}
               >
@@ -758,12 +743,23 @@ export default function HRPage() {
 
       {/* Empty state */}
       {filteredEmployees.length === 0 && (
-        <div className="text-center py-12">
-          <Users size={48} className="mx-auto text-[#E8E5E0] mb-3" />
-          <p className="text-[#64648B]">{t('common.no_results')}</p>
-        </div>
+        <EmptyState
+          icon={<Users size={48} />}
+          title={t('common.no_results') || 'No employees found'}
+        />
       )}
     </div>
-      </RoleGuard>
+
+    {/* Confirm Dialog for bulk check-in */}
+    <ConfirmDialog
+      isOpen={confirm.isOpen}
+      onClose={confirm.close}
+      onConfirm={confirm.confirm}
+      title={confirm.title}
+      message={confirm.message}
+      variant="warning"
+      loading={confirm.loading}
+    />
+    </RoleGuard>
   );
 }

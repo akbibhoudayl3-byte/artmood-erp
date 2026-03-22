@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Input';
-import { Building, Users, DollarSign, Rocket, ChevronRight, Check } from 'lucide-react';
+import { Building, Users, DollarSign, Rocket, ChevronRight, Check, Copy } from 'lucide-react';
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -19,10 +19,19 @@ const STEPS = [
   { key: 'expenses', icon: DollarSign, title: 'Recurring Expenses', subtitle: 'Set up monthly fixed costs' },
 ];
 
+/** Generate a random 12-char password (letters + digits + symbols). */
+function generatePassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => chars[b % chars.length]).join('');
+}
+
 interface TeamMember {
   name: string;
   email: string;
   role: string;
+  password: string;
 }
 
 interface RecurringExpense {
@@ -45,8 +54,9 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
 
   // Team
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([
-    { name: '', email: '', role: 'workshop_worker' },
+    { name: '', email: '', role: 'workshop_worker', password: generatePassword() },
   ]);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   // Expenses
   const [expenses, setExpenses] = useState<RecurringExpense[]>([
@@ -56,7 +66,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   ]);
 
   function addTeamMember() {
-    setTeamMembers([...teamMembers, { name: '', email: '', role: 'workshop_worker' }]);
+    setTeamMembers([...teamMembers, { name: '', email: '', role: 'workshop_worker', password: generatePassword() }]);
   }
 
   function updateTeamMember(index: number, field: string, value: string) {
@@ -92,7 +102,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
           body: JSON.stringify({
             action: 'create',
             email: member.email,
-            password: 'artmood123',
+            password: member.password,
             full_name: member.name,
             role: member.role,
           }),
@@ -194,7 +204,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
           {/* Team */}
           {step === 2 && (
             <div className="space-y-3">
-              <p className="text-xs text-[#64648B]">Default password for all members: <code className="bg-[#F5F3F0] px-1.5 py-0.5 rounded">artmood123</code> (they should change it after first login)</p>
+              <p className="text-xs text-[#64648B]">Each member gets a unique secure password. Copy it and share it with them — they should change it after first login.</p>
               {teamMembers.map((member, i) => (
                 <div key={i} className="p-3 bg-[#F5F3F0] rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
@@ -205,6 +215,17 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                   </div>
                   <Input placeholder="Full Name" value={member.name} onChange={e => updateTeamMember(i, 'name', e.target.value)} />
                   <Input placeholder="Email" type="email" value={member.email} onChange={e => updateTeamMember(i, 'email', e.target.value)} />
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-white px-3 py-2 rounded-lg text-xs font-mono border border-[#E8E5E0] select-all">{member.password}</code>
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard.writeText(member.password); setCopiedIdx(i); setTimeout(() => setCopiedIdx(null), 2000); }}
+                      className="p-2 rounded-lg hover:bg-white transition-colors"
+                      title="Copy password"
+                    >
+                      {copiedIdx === i ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="text-[#64648B]" />}
+                    </button>
+                  </div>
                   <select
                     value={member.role}
                     onChange={e => updateTeamMember(i, 'role', e.target.value)}
