@@ -108,7 +108,7 @@ BEGIN
     p_client_email,
     p_client_city,
     p_project_type,
-    'measurements',
+    'measurements_confirmed',
     p_budget,
     p_notes,
     p_created_by,

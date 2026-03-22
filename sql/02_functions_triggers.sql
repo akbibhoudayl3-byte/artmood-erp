@@ -207,7 +207,7 @@ ORDER BY month DESC;
 CREATE OR REPLACE VIEW public.v_business_health AS
 SELECT
     (SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) FROM public.ledger WHERE date >= CURRENT_DATE - 30) AS cashflow_30d,
-    (SELECT COUNT(*) FROM public.projects WHERE status IN ('production','installation') AND paid_amount < total_amount * 0.5) AS overdue_deposits,
+    (SELECT COUNT(*) FROM public.projects WHERE status IN ('in_production','installation') AND paid_amount < total_amount * 0.5) AS overdue_deposits,
     (SELECT COUNT(*) FROM public.stock_items WHERE current_quantity <= minimum_quantity AND is_active) AS critical_stock_items,
     (SELECT COUNT(*) FROM public.production_orders WHERE status = 'in_progress' AND started_at < NOW() - INTERVAL '14 days') AS delayed_production,
     (SELECT COUNT(*) FROM public.cheques WHERE status = 'pending' AND due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7) AS cheques_due_7d;

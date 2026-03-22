@@ -7,7 +7,7 @@
  * The RPC function `convert_lead_to_project` wraps everything in a single transaction:
  *   1. Validates lead status = "won" and not already converted
  *   2. Generates auto-reference ART-YYYY-XXXX
- *   3. Creates the project (status = "measurements")
+ *   3. Creates the project (status = "measurements_confirmed")
  *   4. Locks the lead (project_id + converted_at)
  *   5. If anything fails → full rollback
  *

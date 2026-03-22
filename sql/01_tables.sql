@@ -63,7 +63,7 @@ CREATE TABLE public.projects (
     client_address TEXT,
     client_city TEXT,
     project_type TEXT NOT NULL CHECK (project_type IN ('kitchen','dressing','furniture','other')),
-    status TEXT NOT NULL DEFAULT 'measurements' CHECK (status IN ('measurements','design','client_validation','production','installation','delivered','cancelled')),
+    status TEXT NOT NULL DEFAULT 'measurements_confirmed' CHECK (status IN ('measurements_confirmed','design_validated','bom_generated','ready_for_production','in_production','installation','delivered','cancelled')),
     priority TEXT DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
     measurement_notes TEXT,
     measurement_date TIMESTAMPTZ,

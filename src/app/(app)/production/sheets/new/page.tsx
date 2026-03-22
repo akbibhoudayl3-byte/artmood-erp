@@ -36,7 +36,7 @@ export default function NewProductionSheetPage() {
     const { data } = await supabase
       .from('projects')
       .select('*')
-      .in('status', ['production', 'client_validation', 'design'])
+      .in('status', ['in_production', 'ready_for_production', 'bom_generated', 'design_validated'])
       .order('created_at', { ascending: false });
     setProjects(data || []);
     setLoading(false);

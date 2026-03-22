@@ -26,21 +26,21 @@ const MESSAGE_TEMPLATES: { key: string; label: string; stage: string; generate: 
   {
     key: 'design_ready',
     label: 'Design Ready for Review',
-    stage: 'design',
+    stage: 'design_validated',
     generate: (p) =>
       `Bonjour ${p.client_name},\n\nVotre design est prêt pour validation! Nous aimerions prendre rendez-vous pour vous le présenter.\n\nRéférence: ${p.reference_code}\n\nMerci de nous contacter pour fixer un créneau.\n\nCordialement,\nArtMood`,
   },
   {
     key: 'validation_reminder',
     label: 'Validation Reminder',
-    stage: 'client_validation',
+    stage: 'design_validated',
     generate: (p) =>
       `Bonjour ${p.client_name},\n\nNous attendons votre validation du design pour le projet ${p.reference_code}.\n\nUne fois validé, nous pourrons lancer la production.\n\nN'hésitez pas à nous contacter pour toute question.\n\nCordialement,\nArtMood`,
   },
   {
     key: 'deposit_request',
     label: 'Deposit Payment Request',
-    stage: 'client_validation',
+    stage: 'ready_for_production',
     generate: (p) => {
       const deposit = Math.round(p.total_amount * 0.5);
       return `Bonjour ${p.client_name},\n\nPour lancer la production de votre projet ${p.reference_code}, nous vous prions de bien vouloir effectuer le versement de l'acompte de ${deposit.toLocaleString()} MAD (50%).\n\nMontant total: ${p.total_amount.toLocaleString()} MAD\nAcompte: ${deposit.toLocaleString()} MAD\n\nMerci de votre confiance.\n\nCordialement,\nArtMood`;
@@ -49,14 +49,14 @@ const MESSAGE_TEMPLATES: { key: string; label: string; stage: string; generate: 
   {
     key: 'production_started',
     label: 'Production Started',
-    stage: 'production',
+    stage: 'in_production',
     generate: (p) =>
       `Bonjour ${p.client_name},\n\nBonne nouvelle! La production de votre projet ${p.reference_code} a commencé.\n\nNous vous tiendrons informé de l'avancement.\n\nCordialement,\nArtMood`,
   },
   {
     key: 'production_complete',
     label: 'Production Complete - Pre-installation Payment',
-    stage: 'production',
+    stage: 'in_production',
     generate: (p) => {
       const preInstall = Math.round(p.total_amount * 0.4);
       return `Bonjour ${p.client_name},\n\nVotre projet ${p.reference_code} est terminé en atelier! Nous sommes prêts à planifier l'installation.\n\nPour confirmer la date d'installation, merci de régler le 2ème versement de ${preInstall.toLocaleString()} MAD (40%).\n\nMontant total: ${p.total_amount.toLocaleString()} MAD\nDéjà payé: ${p.paid_amount.toLocaleString()} MAD\nÀ régler: ${preInstall.toLocaleString()} MAD\n\nCordialement,\nArtMood`;

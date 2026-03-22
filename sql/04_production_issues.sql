@@ -156,7 +156,7 @@ SELECT
         WHEN p.status = 'cancelled' THEN 'gray'
         WHEN (CURRENT_DATE > COALESCE(p.estimated_production_end, CURRENT_DATE + 365) + 7)
             OR (COALESCE(SUM(pc.amount), 0) > p.total_amount * 0.85)
-            OR (NOT p.deposit_paid AND p.status IN ('production','installation'))
+            OR (NOT p.deposit_paid AND p.status IN ('in_production','installation'))
         THEN 'red'
         ELSE 'yellow'
     END AS overall_health

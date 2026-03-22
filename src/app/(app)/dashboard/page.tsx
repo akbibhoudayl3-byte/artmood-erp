@@ -186,7 +186,7 @@ export default function DashboardPage() {
           supabase.from('v_business_health').select('*').single(),
           supabase.from('v_project_financial_intelligence')
             .select('profit_health')
-            .not('status', 'in', '("cancelled","measurements","design")'),
+            .not('status', 'in', '("cancelled","measurements_confirmed","design_validated")'),
           supabase.from('v_project_material_waste')
             .select('waste_pct,consumption_records')
             .gt('consumption_records', 0),

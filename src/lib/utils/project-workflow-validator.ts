@@ -29,23 +29,25 @@ import type { ProjectStatus, Project } from '@/types/crm';
  * or explicitly backwards (to handle corrections / cancellations).
  */
 const FORWARD_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
-  measurements:      ['design', 'cancelled'],
-  design:            ['client_validation', 'cancelled'],
-  client_validation: ['production', 'design', 'cancelled'],
-  production:        ['installation', 'cancelled'],
-  installation:      ['delivered', 'cancelled'],
-  delivered:         [],                          // terminal
-  cancelled:         ['measurements'],            // allow re-opening
+  measurements_confirmed:  ['design_validated', 'cancelled'],
+  design_validated:        ['bom_generated', 'cancelled'],
+  bom_generated:           ['ready_for_production', 'cancelled'],
+  ready_for_production:    ['in_production', 'cancelled'],
+  in_production:           ['installation', 'cancelled'],
+  installation:            ['delivered', 'cancelled'],
+  delivered:               [],                          // terminal
+  cancelled:               ['measurements_confirmed'],  // allow re-opening
 };
 
 /**
  * All statuses in pipeline order (used for ordering / progress).
  */
 const STATUS_ORDER: ProjectStatus[] = [
-  'measurements',
-  'design',
-  'client_validation',
-  'production',
+  'measurements_confirmed',
+  'design_validated',
+  'bom_generated',
+  'ready_for_production',
+  'in_production',
   'installation',
   'delivered',
   'cancelled',
@@ -133,7 +135,7 @@ export function validateTransitionRequirements(
   }
 
   // ── Production gate ──────────────────────────────────────────────────
-  if (targetStatus === 'production') {
+  if (targetStatus === 'in_production') {
     // Hard blocker: deposit must be paid
     if (!project.deposit_paid) {
       errors.push('50% deposit has not been paid. Please collect the deposit first.');

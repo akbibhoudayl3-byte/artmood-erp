@@ -51,7 +51,7 @@ export default function NewProjectPage() {
       priority: form.priority,
       total_amount: form.total_amount ? parseFloat(form.total_amount) : 0,
       notes: form.notes || null,
-      status: 'measurements',
+      status: 'measurements_confirmed',
       created_by: profile?.id,
     }).select('id').single();
 

@@ -69,10 +69,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  if (project.status !== 'production' && project.status !== 'client_validation') {
+  if (project.status !== 'in_production' && project.status !== 'ready_for_production' && project.status !== 'bom_generated') {
     return NextResponse.json(
       {
-        error: 'Le projet doit être en statut "production" ou "validation client" pour créer un ordre de production',
+        error: 'Le projet doit être en statut "en production", "prêt pour production" ou "BOM généré" pour créer un ordre de production',
         current_status: project.status,
       },
       { status: 422 },

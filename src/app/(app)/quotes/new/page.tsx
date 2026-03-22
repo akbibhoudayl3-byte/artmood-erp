@@ -150,7 +150,7 @@ export default function NewQuotePage() {
 
   useEffect(() => {
     supabase.from('projects').select('id, client_name, reference_code')
-      .in('status', ['measurements', 'design', 'client_validation', 'production'])
+      .in('status', ['measurements_confirmed', 'design_validated', 'bom_generated', 'ready_for_production', 'in_production'])
       .order('created_at', { ascending: false })
       .then(({ data }) => setProjects((data as ProjectOption[]) || []));
 

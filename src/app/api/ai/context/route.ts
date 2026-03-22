@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
     timestamp: new Date().toISOString(),
     factory_state: {
       active_projects: projects.filter(p => !['delivered', 'cancelled'].includes(p.status)).length,
-      projects_in_production: projects.filter(p => p.status === 'production').length,
+      projects_in_production: projects.filter(p => p.status === 'in_production').length,
       projects_overdue_payment: projects.filter(p => Number(p.paid_amount) < Number(p.total_amount) * 0.5).length,
       pending_installations: installations.length,
       active_production_orders: production.length,

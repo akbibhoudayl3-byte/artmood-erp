@@ -83,7 +83,7 @@ export default function InvoicesPage() {
     const { data } = await supabase
       .from('projects')
       .select('id, reference_code, client_name, total_amount, paid_amount')
-      .in('status', ['production', 'installation', 'delivered'])
+      .in('status', ['in_production', 'installation', 'delivered'])
       .gt('total_amount', 0)
       .order('created_at', { ascending: false });
     setProjects((data as InvoiceableProject[]) || []);

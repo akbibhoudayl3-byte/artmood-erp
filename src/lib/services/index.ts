@@ -284,8 +284,8 @@ export async function recordPayment(payload: PaymentPayload): Promise<ServiceRes
 // ════════════════════════════════════════════════════════════════════════════
 
 export type ProjectStatus =
-  | 'measurements' | 'design' | 'client_validation'
-  | 'production' | 'installation' | 'completed' | 'cancelled';
+  | 'measurements_confirmed' | 'design_validated' | 'bom_generated'
+  | 'ready_for_production' | 'in_production' | 'installation' | 'delivered' | 'cancelled';
 
 export async function updateProjectStatus(
   projectId: string,
@@ -295,7 +295,7 @@ export async function updateProjectStatus(
   if (!projectId) return fail('Project ID is required.');
 
   // Safety check: cannot move to production without deposit
-  if (newStatus === 'production') {
+  if (newStatus === 'in_production') {
     const { data: project } = await supabase()
       .from('projects')
       .select('deposit_paid, design_validated, total_amount')
@@ -312,8 +312,8 @@ export async function updateProjectStatus(
     updated_at: new Date().toISOString(),
   };
   // production_started_at added by schema_fix_migrate.js
-  if (newStatus === 'production') updates.production_started_at = new Date().toISOString();
-  if (newStatus === 'completed') updates.actual_delivery_date = new Date().toISOString();
+  if (newStatus === 'in_production') updates.production_started_at = new Date().toISOString();
+  if (newStatus === 'delivered') updates.actual_delivery_date = new Date().toISOString();
 
   const { error } = await supabase()
     .from('projects')

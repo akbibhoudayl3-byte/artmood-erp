@@ -119,7 +119,7 @@ export default function ProductionChecklistPage() {
 
     await supabase
       .from('projects')
-      .update({ status: 'production' })
+      .update({ status: 'in_production' })
       .eq('id', projectId);
 
     // Create notification
@@ -408,7 +408,7 @@ export default function ProductionChecklistPage() {
       )}
 
       {/* Approve Button */}
-      {canApprove && project?.status !== 'production' && (
+      {canApprove && project?.status !== 'in_production' && (
         <Button
           onClick={handleApproveForProduction}
           variant="primary"
