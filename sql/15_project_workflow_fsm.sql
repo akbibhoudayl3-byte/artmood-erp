@@ -1,37 +1,45 @@
 -- ============================================================
--- Migration: Project Workflow FSM — Strict Sequential Statuses
+-- HARD Migration: Project Workflow FSM — New Status Set
+-- Run in Supabase SQL Editor inside a transaction.
 --
--- NEW STATUS SET (sequential, no skipping):
---   draft → measurements_confirmed → design_validated → bom_generated
+-- APPROVED MAPPING (no draft for existing projects):
+--   measurements      → measurements_confirmed
+--   design            → design_validated
+--   client_validation → design_validated
+--   production        → in_production
+--   installation      → installation       (unchanged)
+--   delivered         → delivered           (unchanged)
+--   cancelled         → cancelled           (unchanged)
+--
+-- NEW STATUS SET (sequential):
+--   measurements_confirmed → design_validated → bom_generated
 --   → ready_for_production → in_production → installation → delivered
+--   + cancelled (terminal, reachable from any non-terminal state)
 --
--- Also adds: cancelled (terminal, reachable from any non-terminal state)
---
--- SAFETY: No project loses progression. All mappings preserve or advance state.
---
--- DATA MIGRATION (preserves real project progress — NEVER downgrade):
---   measurements      → measurements_confirmed  (measurements were taken)
---   design            → design_validated         (design work was done)
---   client_validation → design_validated         (client approved design)
---   production        → in_production            (direct equivalent)
---   installation      → installation             (no change)
---   delivered         → delivered                (no change)
---   cancelled         → cancelled                (no change)
+-- New projects created via lead conversion start at measurements_confirmed.
 -- ============================================================
 
+BEGIN;
+
+-- ──────────────────────────────────────────────
 -- 1. Drop the old CHECK constraint
+-- ──────────────────────────────────────────────
 ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check;
 
--- 2. Migrate existing data to new status values (NEVER downgrade progress)
+-- ──────────────────────────────────────────────
+-- 2. HARD data migration — remap existing rows
+-- ──────────────────────────────────────────────
 UPDATE projects SET status = 'measurements_confirmed' WHERE status = 'measurements';
-UPDATE projects SET status = 'design_validated' WHERE status = 'design';
-UPDATE projects SET status = 'design_validated' WHERE status = 'client_validation';
-UPDATE projects SET status = 'in_production' WHERE status = 'production';
+UPDATE projects SET status = 'design_validated'       WHERE status = 'design';
+UPDATE projects SET status = 'design_validated'       WHERE status = 'client_validation';
+UPDATE projects SET status = 'in_production'          WHERE status = 'production';
+-- installation, delivered, cancelled remain unchanged
 
--- 3. Add the new CHECK constraint
+-- ──────────────────────────────────────────────
+-- 3. Add the new CHECK constraint (no draft)
+-- ──────────────────────────────────────────────
 ALTER TABLE projects ADD CONSTRAINT projects_status_check
   CHECK (status IN (
-    'draft',
     'measurements_confirmed',
     'design_validated',
     'bom_generated',
@@ -42,7 +50,14 @@ ALTER TABLE projects ADD CONSTRAINT projects_status_check
     'cancelled'
   ));
 
--- 4. Add workflow timestamp columns (if not existing)
+-- ──────────────────────────────────────────────
+-- 4. Update DEFAULT to new initial status
+-- ──────────────────────────────────────────────
+ALTER TABLE projects ALTER COLUMN status SET DEFAULT 'measurements_confirmed';
+
+-- ──────────────────────────────────────────────
+-- 5. Add workflow timestamp columns
+-- ──────────────────────────────────────────────
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ DEFAULT now();
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS bom_generated_at TIMESTAMPTZ;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS production_started_at TIMESTAMPTZ;
@@ -50,10 +65,15 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS cancelled_reason TEXT;
 
--- 5. Set defaults for existing rows
+-- ──────────────────────────────────────────────
+-- 6. Backfill status_updated_at for existing rows
+-- ──────────────────────────────────────────────
 UPDATE projects SET status_updated_at = updated_at WHERE status_updated_at IS NULL;
 
--- 6. Update the convert_lead_to_project RPC to use 'draft' instead of 'measurements'
+-- ──────────────────────────────────────────────
+-- 7. Update convert_lead_to_project RPC
+--    New projects start at measurements_confirmed
+-- ──────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION convert_lead_to_project(
   p_lead_id UUID,
   p_client_name TEXT,
@@ -117,7 +137,7 @@ BEGIN
     status_updated_at, created_at, updated_at
   ) VALUES (
     v_reference, p_lead_id, p_client_name, p_client_phone, p_client_email,
-    p_client_city, p_project_type, 'draft', p_budget, p_notes, p_created_by,
+    p_client_city, p_project_type, 'measurements_confirmed', p_budget, p_notes, p_created_by,
     NOW(), NOW(), NOW()
   )
   RETURNING * INTO v_project;
@@ -138,10 +158,19 @@ BEGIN
 END;
 $$;
 
--- 7. Comments
-COMMENT ON COLUMN projects.status IS 'Project lifecycle stage: draft → measurements_confirmed → design_validated → bom_generated → ready_for_production → in_production → installation → delivered | cancelled';
+-- ──────────────────────────────────────────────
+-- 8. Verification query (run after migration)
+-- ──────────────────────────────────────────────
+-- SELECT status, COUNT(*) FROM projects GROUP BY status ORDER BY status;
+
+-- ──────────────────────────────────────────────
+-- 9. Comments
+-- ──────────────────────────────────────────────
+COMMENT ON COLUMN projects.status IS 'Project lifecycle: measurements_confirmed → design_validated → bom_generated → ready_for_production → in_production → installation → delivered | cancelled';
 COMMENT ON COLUMN projects.status_updated_at IS 'Timestamp of the most recent status transition';
 COMMENT ON COLUMN projects.bom_generated_at IS 'When BOM was first generated for this project';
 COMMENT ON COLUMN projects.production_started_at IS 'When production orders were first created';
 COMMENT ON COLUMN projects.delivered_at IS 'When the project was marked as delivered';
 COMMENT ON COLUMN projects.cancelled_at IS 'When the project was cancelled';
+
+COMMIT;
