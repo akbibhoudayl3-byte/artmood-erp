@@ -149,6 +149,8 @@ export async function POST(
     projectId,
     project,
     supabase: ctx.supabase,
+    role: ctx.role,
+    userId: ctx.userId,
   });
   if (fsm !== null) return fsm;
 

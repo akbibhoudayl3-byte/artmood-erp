@@ -100,10 +100,18 @@ export default function ProjectDetailPage() {
   // Transition state
   const [transitioning, setTransitioning] = useState(false);
   const [transitionError, setTransitionError] = useState('');
+  const [showDepositException, setShowDepositException] = useState(false);
 
   // Cancel modal
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+
+  // Exception request modal
+  const [showExceptionModal, setShowExceptionModal] = useState(false);
+  const [exceptionForm, setExceptionForm] = useState({ reason: '', urgency: 'normal', note: '' });
+  const [exceptionSubmitting, setExceptionSubmitting] = useState(false);
+  const [exceptionStatus, setExceptionStatus] = useState<'idle' | 'sent' | 'pending'>('idle');
+  const [pendingExceptionId, setPendingExceptionId] = useState<string | null>(null);
 
   useEffect(() => { loadAll(); }, [id]);
 
@@ -161,6 +169,7 @@ export default function ProjectDetailPage() {
   async function transitionTo(newStatus: ProjectStatus, opts?: { cancelled_reason?: string; notes?: string }) {
     setTransitioning(true);
     setTransitionError('');
+    setShowDepositException(false);
 
     try {
       const res = await fetch(`/api/projects/${id}/transition`, {
@@ -174,7 +183,12 @@ export default function ProjectDetailPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setTransitionError(data.reason || data.message || data.error || 'Transition refusée');
+        const reason = data.reason || data.message || data.error || 'Transition refusée';
+        setTransitionError(reason);
+        // Detect deposit gate block → show "Request Exception" option
+        if (newStatus === 'in_production' && reason.toLowerCase().includes('acompte')) {
+          setShowDepositException(true);
+        }
         setTransitioning(false);
         return;
       }
@@ -186,6 +200,52 @@ export default function ProjectDetailPage() {
       setTransitioning(false);
     }
   }
+
+  async function submitExceptionRequest() {
+    if (!exceptionForm.reason.trim()) return;
+    setExceptionSubmitting(true);
+
+    try {
+      const res = await fetch(`/api/projects/${id}/exception-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exceptionForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTransitionError(data.message || data.error || 'Erreur lors de la demande');
+        setExceptionSubmitting(false);
+        return;
+      }
+      setPendingExceptionId(data.exception_request_id);
+      setExceptionStatus('sent');
+      setShowExceptionModal(false);
+      setTransitionError('');
+      setShowDepositException(false);
+      setExceptionForm({ reason: '', urgency: 'normal', note: '' });
+      loadAll();
+    } catch {
+      setTransitionError('Erreur réseau');
+    }
+    setExceptionSubmitting(false);
+  }
+
+  // Check for pending exception request on load
+  useEffect(() => {
+    if (!id) return;
+    const supabaseCheck = createClient();
+    supabaseCheck.from('exception_requests')
+      .select('id, status')
+      .eq('project_id', id)
+      .eq('status', 'pending')
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setExceptionStatus('pending');
+          setPendingExceptionId(data[0].id);
+        }
+      });
+  }, [id]);
 
   async function handleCancel() {
     if (!cancelReason.trim()) {
@@ -323,13 +383,46 @@ export default function ProjectDetailPage() {
       {transitionError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-3 flex items-start gap-2">
           <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
-          <div>
+          <div className="flex-1">
             <p className="text-sm text-red-700 font-medium">Transition refusée</p>
             <p className="text-xs text-red-600 mt-0.5">{transitionError}</p>
+            {showDepositException && profile?.role !== 'ceo' && (
+              <button
+                onClick={() => {
+                  setExceptionForm({ reason: '', urgency: 'normal', note: '' });
+                  setShowExceptionModal(true);
+                }}
+                className="mt-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                Demander une exception
+              </button>
+            )}
           </div>
-          <button onClick={() => setTransitionError('')} className="ml-auto">
+          <button onClick={() => { setTransitionError(''); setShowDepositException(false); }} className="ml-auto">
             <X size={16} className="text-red-400" />
           </button>
+        </div>
+      )}
+
+      {/* ── Pending Exception Banner ──────────────────────────────────────── */}
+      {exceptionStatus === 'pending' && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 flex items-center gap-2">
+          <Clock size={16} className="text-amber-500 shrink-0" />
+          <div>
+            <p className="text-sm text-amber-700 font-medium">Exception en attente d&apos;approbation</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Votre demande de bypass acompte a été envoyée au CEO. En attente de décision.
+            </p>
+          </div>
+        </div>
+      )}
+      {exceptionStatus === 'sent' && (
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-3 flex items-center gap-2">
+          <CheckCircle size={16} className="text-green-500 shrink-0" />
+          <div>
+            <p className="text-sm text-green-700 font-medium">Demande d&apos;exception envoyée</p>
+            <p className="text-xs text-green-600 mt-0.5">Le CEO a été notifié. Vous serez informé de la décision.</p>
+          </div>
         </div>
       )}
 
@@ -688,6 +781,76 @@ export default function ProjectDetailPage() {
                 className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors"
               >
                 {transitioning ? 'Annulation...' : 'Confirmer l\'annulation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exception Request Modal */}
+      {showExceptionModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-amber-700 flex items-center gap-2">
+                <AlertTriangle size={18} /> Demander une exception
+              </h2>
+              <button onClick={() => setShowExceptionModal(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 text-xs text-amber-700 space-y-1">
+              <p>L&apos;acompte de 50% n&apos;est pas atteint pour ce projet.</p>
+              <p className="font-semibold">
+                Acompte actuel: {project.total_amount > 0 ? Math.round((project.paid_amount / project.total_amount) * 100) : 0}%
+                ({project.paid_amount?.toLocaleString() || 0} / {project.total_amount?.toLocaleString() || 0} MAD)
+              </p>
+              <p>Cette demande sera envoyée au CEO pour approbation.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Raison de la demande *</label>
+              <textarea
+                value={exceptionForm.reason}
+                onChange={e => setExceptionForm(f => ({...f, reason: e.target.value}))}
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                placeholder="Pourquoi lancer la production sans l'acompte complet..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Urgence</label>
+              <select
+                value={exceptionForm.urgency}
+                onChange={e => setExceptionForm(f => ({...f, urgency: e.target.value}))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white"
+              >
+                <option value="normal">Normal</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Note supplémentaire (optionnel)</label>
+              <input
+                value={exceptionForm.note}
+                onChange={e => setExceptionForm(f => ({...f, note: e.target.value}))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                placeholder="Contexte additionnel..."
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowExceptionModal(false)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600">
+                Annuler
+              </button>
+              <button
+                onClick={submitExceptionRequest}
+                disabled={exceptionSubmitting || !exceptionForm.reason.trim()}
+                className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors"
+              >
+                {exceptionSubmitting ? 'Envoi...' : 'Envoyer la demande'}
               </button>
             </div>
           </div>
