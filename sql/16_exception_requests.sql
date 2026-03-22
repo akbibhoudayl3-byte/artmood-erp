@@ -1,51 +1,33 @@
 -- ============================================================
--- Exception Requests — Deposit Override Workflow
---
--- Allows non-admin users to request a deposit rule bypass.
--- CEO/admin reviews and approves/rejects.
--- Approved exceptions unlock the production transition.
+-- Project Exceptions — Deposit Override Requests (MVP)
 -- ============================================================
 
 BEGIN;
 
--- ──────────────────────────────────────────────
--- 1. Create exception_requests table
--- ──────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS public.exception_requests (
+CREATE TABLE IF NOT EXISTS public.project_exceptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
-    requester_id UUID NOT NULL REFERENCES public.profiles(id),
-    requested_status TEXT NOT NULL,
-    current_deposit_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+    requested_by UUID NOT NULL REFERENCES public.profiles(id),
     reason TEXT NOT NULL,
-    urgency TEXT NOT NULL DEFAULT 'normal' CHECK (urgency IN ('normal', 'urgent')),
     note TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
     reviewed_by UUID REFERENCES public.profiles(id),
     reviewed_at TIMESTAMPTZ,
-    review_note TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_exception_requests_project ON public.exception_requests(project_id);
-CREATE INDEX IF NOT EXISTS idx_exception_requests_status ON public.exception_requests(status);
+CREATE INDEX IF NOT EXISTS idx_project_exceptions_project ON public.project_exceptions(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_exceptions_status ON public.project_exceptions(status);
 
--- ──────────────────────────────────────────────
--- 2. RLS policies
--- ──────────────────────────────────────────────
-ALTER TABLE public.exception_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.project_exceptions ENABLE ROW LEVEL SECURITY;
 
--- Everyone can read (filtered by UI per role)
-CREATE POLICY exception_requests_select ON public.exception_requests
+CREATE POLICY project_exceptions_select ON public.project_exceptions
     FOR SELECT USING (true);
 
--- Authenticated users can insert their own requests
-CREATE POLICY exception_requests_insert ON public.exception_requests
-    FOR INSERT WITH CHECK (auth.uid() = requester_id);
+CREATE POLICY project_exceptions_insert ON public.project_exceptions
+    FOR INSERT WITH CHECK (auth.uid() = requested_by);
 
--- Only CEO can update (approve/reject)
-CREATE POLICY exception_requests_update ON public.exception_requests
+CREATE POLICY project_exceptions_update ON public.project_exceptions
     FOR UPDATE USING (
         EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'ceo')
     );

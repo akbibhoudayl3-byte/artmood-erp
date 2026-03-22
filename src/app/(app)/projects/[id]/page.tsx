@@ -108,10 +108,9 @@ export default function ProjectDetailPage() {
 
   // Exception request modal
   const [showExceptionModal, setShowExceptionModal] = useState(false);
-  const [exceptionForm, setExceptionForm] = useState({ reason: '', urgency: 'normal', note: '' });
+  const [exceptionForm, setExceptionForm] = useState({ reason: '', note: '' });
   const [exceptionSubmitting, setExceptionSubmitting] = useState(false);
   const [exceptionStatus, setExceptionStatus] = useState<'idle' | 'sent' | 'pending'>('idle');
-  const [pendingExceptionId, setPendingExceptionId] = useState<string | null>(null);
 
   useEffect(() => { loadAll(); }, [id]);
 
@@ -209,20 +208,19 @@ export default function ProjectDetailPage() {
       const res = await fetch(`/api/projects/${id}/exception-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(exceptionForm),
+        body: JSON.stringify({ reason: exceptionForm.reason, note: exceptionForm.note || undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setTransitionError(data.message || data.error || 'Erreur lors de la demande');
+        setTransitionError(data.error || 'Erreur lors de la demande');
         setExceptionSubmitting(false);
         return;
       }
-      setPendingExceptionId(data.exception_request_id);
       setExceptionStatus('sent');
       setShowExceptionModal(false);
       setTransitionError('');
       setShowDepositException(false);
-      setExceptionForm({ reason: '', urgency: 'normal', note: '' });
+      setExceptionForm({ reason: '', note: '' });
       loadAll();
     } catch {
       setTransitionError('Erreur réseau');
@@ -230,20 +228,16 @@ export default function ProjectDetailPage() {
     setExceptionSubmitting(false);
   }
 
-  // Check for pending exception request on load
+  // Check for pending exception on load
   useEffect(() => {
     if (!id) return;
-    const supabaseCheck = createClient();
-    supabaseCheck.from('exception_requests')
-      .select('id, status')
+    createClient().from('project_exceptions')
+      .select('id')
       .eq('project_id', id)
       .eq('status', 'pending')
       .limit(1)
       .then(({ data }) => {
-        if (data && data.length > 0) {
-          setExceptionStatus('pending');
-          setPendingExceptionId(data[0].id);
-        }
+        if (data && data.length > 0) setExceptionStatus('pending');
       });
   }, [id]);
 
@@ -808,7 +802,7 @@ export default function ProjectDetailPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Raison de la demande *</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Raison *</label>
               <textarea
                 value={exceptionForm.reason}
                 onChange={e => setExceptionForm(f => ({...f, reason: e.target.value}))}
@@ -819,19 +813,7 @@ export default function ProjectDetailPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Urgence</label>
-              <select
-                value={exceptionForm.urgency}
-                onChange={e => setExceptionForm(f => ({...f, urgency: e.target.value}))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white"
-              >
-                <option value="normal">Normal</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Note supplémentaire (optionnel)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Note (optionnel)</label>
               <input
                 value={exceptionForm.note}
                 onChange={e => setExceptionForm(f => ({...f, note: e.target.value}))}
