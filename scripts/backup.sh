@@ -28,22 +28,25 @@ fi
 git push origin master
 echo "Pushed to GitHub."
 
-# ── 2. Rsync to remote server ────────────────────────────────────────
+# ── 2. Sync to remote server via git pull ─────────────────────────────
 echo "=== [2/2] Server Backup ==="
 
-rsync -avz --delete \
-  --exclude '.next' \
-  --exclude 'node_modules' \
-  --exclude '.git' \
-  --exclude '.env.local' \
-  -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
-  "$PROJECT_DIR/" \
-  "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH"
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" bash -s <<'REMOTE'
+  cd /home/ubuntu/artmood
 
-echo "Synced to server."
+  # Pull latest from GitHub
+  git pull origin master --ff-only 2>&1 || {
+    echo "Git pull failed — trying reset"
+    git fetch origin master
+    git reset --hard origin/master
+  }
 
-# Restart PM2 on server
-ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" \
-  "cd $REMOTE_PATH && pm2 restart artmood 2>/dev/null || pm2 start npm --name artmood -- run dev"
+  # Install any new deps
+  npm install --omit=dev 2>&1 | tail -3
+
+  # Restart app
+  pm2 restart artmood 2>/dev/null || pm2 start npm --name artmood -- run dev
+  echo "Server updated and restarted."
+REMOTE
 
 echo "=== Backup complete ==="
