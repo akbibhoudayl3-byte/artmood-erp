@@ -51,3 +51,8 @@ _staging/
 # Claude
 .claude/
 nul
+
+# Auto-deploy (server only)
+deploy.sh
+deploy.log
+auto-deploy.js
