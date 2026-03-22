@@ -55,6 +55,9 @@ nul
 # Application logs
 logs/
 
+# Backups (contain production data)
+backups/
+
 # Auto-deploy (server only)
 deploy.sh
 deploy.log

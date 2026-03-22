@@ -113,6 +113,30 @@ export const API_ROLES: Record<string, UserRole[]> = {
   // Work time — all employees (everyone clocks in/out)
   '/api/work-time':                    ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
 
+  // Stock & Suppliers — CEO + workshop
+  '/api/stock':                        ['ceo', 'workshop_manager'],
+
+  // Payments & Invoices — CEO + commercial
+  '/api/payments':                     ['ceo', 'commercial_manager'],
+  '/api/invoices':                     ['ceo', 'commercial_manager'],
+
+  // BOM (Bill of Materials) — CEO + workshop + commercial
+  '/api/bom':                          ['ceo', 'workshop_manager', 'commercial_manager'],
+
+  // Cutting — CEO + workshop
+  '/api/cutting':                      ['ceo', 'workshop_manager'],
+
+  // Kitchen — CEO + workshop + commercial + designer
+  '/api/kitchen':                      ['ceo', 'workshop_manager', 'commercial_manager', 'designer'],
+
+  // Exception requests — CEO + commercial + workshop
+  '/api/exception-requests':           ['ceo', 'commercial_manager', 'workshop_manager'],
+
+  // Log viewer — CEO only
+  '/api/log':                          ['ceo'],
+
+  // Print invoice — CEO + commercial
+  '/api/print/invoice':                ['ceo', 'commercial_manager'],
 };
 
 /**

@@ -19,7 +19,8 @@ echo ""
 
 # 1. Check env vars
 echo "-- 1. Environment Variables --"
-source /home/ubuntu/artmood/.env.local 2>/dev/null || true
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$APP_DIR/.env.local" 2>/dev/null || source /home/ubuntu/artmood/.env.local 2>/dev/null || true
 
 [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] && fail "NEXT_PUBLIC_SUPABASE_URL is not set"
 [[ "$NEXT_PUBLIC_SUPABASE_URL" == https://* ]] || fail "NEXT_PUBLIC_SUPABASE_URL must start with https://"
