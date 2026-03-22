@@ -185,7 +185,12 @@ export default function ProjectDetailPage() {
         const reason = data.reason || data.message || data.error || 'Transition refusée';
         setTransitionError(reason);
         // Detect deposit gate block → show "Request Exception" option
-        if (newStatus === 'in_production' && reason.toLowerCase().includes('acompte')) {
+        // The FSM returns violations array; deposit block fires at ready_for_production
+        const violations: string[] = data.violations || [];
+        const isDepositBlock = violations.some((v: string) =>
+          v.includes('acompte') || v.includes('50%') || v.includes('deposit')
+        ) || reason.toLowerCase().includes('acompte');
+        if (isDepositBlock && profile?.role !== 'ceo') {
           setShowDepositException(true);
         }
         setTransitioning(false);
