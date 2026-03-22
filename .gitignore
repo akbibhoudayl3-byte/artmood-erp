@@ -52,6 +52,9 @@ _staging/
 .claude/
 nul
 
+# Application logs
+logs/
+
 # Auto-deploy (server only)
 deploy.sh
 deploy.log

@@ -27,6 +27,7 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { writeAuditLog } from '@/lib/security/audit';
 import type { AuditPayload, AuditAction } from '@/lib/security/audit';
 import type { UserRole } from '@/types/database';
+import { logger } from '@/lib/logger';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,16 +84,20 @@ export async function guard(
     const audit = async (payload: Omit<AuditPayload, 'user_id'>): Promise<void> => {
       try {
         await writeAuditLog({ ...payload, user_id: userId });
-      } catch {
+      } catch (err) {
         // Silent — audit failure must never break the primary operation
-        console.error('[SecurityGuardian] audit() failed silently for user', userId);
+        logger.warn('Audit write failed', { userId, error: String(err) });
       }
     };
 
     return { userId, role, profileId, supabase, audit };
   } catch (error) {
     // Safe default: DENY on unexpected errors
-    console.error('[SecurityGuardian] Unexpected error in guard():', error);
+    logger.error('Security guard failed', {
+      error,
+      source: 'security/guardian',
+      meta: { allowedRoles },
+    });
     return NextResponse.json(
       { error: 'Internal security error', message: 'Access denied' },
       { status: 500 }

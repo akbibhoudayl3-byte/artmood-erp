@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
+import { LoggerProvider } from '@/components/LoggerProvider';
 import './globals.css';
 
 const inter = localFont({
@@ -48,7 +49,7 @@ export default function RootLayout({
         ` }} />
       </head>
       <body className={`${inter.className} antialiased`}>
-        {children}
+        <LoggerProvider>{children}</LoggerProvider>
       </body>
     </html>
   );
