@@ -63,7 +63,8 @@ export interface CreatePaymentData {
  */
 export function derivePaymentStatus(method: PaymentMethod): PaymentStatus {
   if (method === 'cash' || method === 'card') return 'confirmed';
-  return 'pending_proof';
+  if (method === 'cheque') return 'pending';
+  return 'pending_proof'; // bank_transfer, other
 }
 
 // ── Financial Status ──────────────────────────────────────────────────────
@@ -150,7 +151,7 @@ export async function getProjectFinancialStatus(
     .filter(p => p.payment_status === 'confirmed')
     .reduce((s, p) => s + Number(p.amount), 0);
   const pendingAmount = (payments || [])
-    .filter(p => p.payment_status === 'pending_proof')
+    .filter(p => p.payment_status === 'pending_proof' || p.payment_status === 'pending')
     .reduce((s, p) => s + Number(p.amount), 0);
   const remaining = Math.max(0, totalAmount - confirmedAmount);
   const overpayment = Math.max(0, confirmedAmount - totalAmount);
@@ -392,7 +393,7 @@ export async function confirmPayment(
 
   if (fetchErr || !payment) return fail('Payment not found.');
   if (payment.payment_status === 'confirmed') return fail('Payment is already confirmed.');
-  if (payment.payment_status === 'rejected') return fail('Cannot confirm a rejected payment.');
+  if (payment.payment_status === 'rejected') return fail('Cannot confirm a rejected payment. Create a new payment instead.');
 
   // Update status
   const updates: Record<string, unknown> = { payment_status: 'confirmed' };

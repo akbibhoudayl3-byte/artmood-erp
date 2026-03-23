@@ -281,7 +281,7 @@ export default function PaymentsPage() {
     .filter(p => p.payment_status === 'confirmed')
     .reduce((s, p) => s + Number(p.amount), 0);
   const pendingTotal = payments
-    .filter(p => p.payment_status === 'pending_proof')
+    .filter(p => p.payment_status === 'pending_proof' || p.payment_status === 'pending')
     .reduce((s, p) => s + Number(p.amount), 0);
   const totalThisMonth = payments
     .filter(p => {
@@ -406,7 +406,12 @@ export default function PaymentsPage() {
                       )}
                       {p.payment_status === 'pending_proof' && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700">
-                          <Clock size={10} /> En attente
+                          <Clock size={10} /> Preuve en attente
+                        </span>
+                      )}
+                      {p.payment_status === 'pending' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700">
+                          <Clock size={10} /> Reçu / En main
                         </span>
                       )}
                       {p.payment_status === 'rejected' && (
@@ -465,7 +470,10 @@ export default function PaymentsPage() {
                       <span className="text-[11px] text-[#64648B]">{p.payment_method}</span>
                     )}
                     {p.payment_status === 'pending_proof' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">En attente</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">Preuve en attente</span>
+                    )}
+                    {p.payment_status === 'pending' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">Reçu / En main</span>
                     )}
                     {p.payment_status === 'rejected' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 font-semibold">Rejeté</span>

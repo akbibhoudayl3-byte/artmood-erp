@@ -8,7 +8,7 @@ import type { ProductionStation } from './production';
 
 export type PaymentType = 'deposit' | 'pre_installation' | 'final' | 'other';
 export type PaymentMethod = 'cash' | 'cheque' | 'bank_transfer' | 'card' | 'other';
-export type PaymentStatus = 'confirmed' | 'pending_proof' | 'rejected';
+export type PaymentStatus = 'confirmed' | 'pending_proof' | 'pending' | 'rejected';
 
 export type ChequeType = 'received' | 'issued';
 export type ChequeStatus = 'pending' | 'deposited' | 'cleared' | 'bounced' | 'cancelled';

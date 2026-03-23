@@ -22,7 +22,7 @@ ALTER TABLE payments
 
 ALTER TABLE payments
   ADD CONSTRAINT chk_payment_status
-  CHECK (payment_status IN ('confirmed', 'pending_proof', 'rejected'));
+  CHECK (payment_status IN ('confirmed', 'pending_proof', 'pending', 'rejected'));
 
 -- ── Step 2: Backfill existing payments to confirmed ─────────────────────────
 -- All existing payments were already counted as paid. Do not break current state.
@@ -74,11 +74,13 @@ BEGIN
     RAISE EXCEPTION 'amount must be greater than zero';
   END IF;
 
-  -- Auto-derive payment_status if not explicitly provided
+  -- Auto-derive payment_status per payment method
   IF p_payment_status IS NOT NULL THEN
     v_status := p_payment_status;
   ELSIF p_method IN ('cash', 'card') THEN
     v_status := 'confirmed';
+  ELSIF p_method = 'cheque' THEN
+    v_status := 'pending';
   ELSE
     v_status := 'pending_proof';
   END IF;
