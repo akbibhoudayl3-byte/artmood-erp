@@ -6,7 +6,7 @@
 
 import { createClient } from '@/lib/supabase/client';
 import type { ServiceResult } from './index';
-import type { PaymentType, PaymentMethod } from '@/types/database';
+import type { PaymentType, PaymentMethod, PaymentStatus } from '@/types/database';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -31,11 +31,14 @@ export interface PaymentWithProject {
   amount: number;
   payment_type: PaymentType;
   payment_method: PaymentMethod | null;
+  payment_status: PaymentStatus;
   reference_number: string | null;
   notes: string | null;
   received_by: string | null;
   received_at: string;
   created_at: string;
+  proof_url: string | null;
+  cheque_id: string | null;
   project?: { client_name: string; reference_code: string } | null;
 }
 
@@ -48,6 +51,19 @@ export interface CreatePaymentData {
   reference_number?: string;
   notes?: string;
   received_by?: string;
+  cheque_id?: string;
+  proof_url?: string;
+}
+
+// ── Status Derivation ─────────────────────────────────────────────────────
+
+/**
+ * Derive initial payment_status from method.
+ * Cash/card = auto-confirmed. Everything else = pending_proof.
+ */
+export function derivePaymentStatus(method: PaymentMethod): PaymentStatus {
+  if (method === 'cash' || method === 'card') return 'confirmed';
+  return 'pending_proof';
 }
 
 // ── Financial Status ──────────────────────────────────────────────────────
@@ -55,11 +71,13 @@ export interface CreatePaymentData {
 export interface ProjectFinancialStatus {
   project_id: string;
   total_amount: number;
-  paid_amount: number;
+  confirmed_amount: number;  // only confirmed payments count
+  pending_amount: number;    // pending_proof payments (not yet confirmed)
+  paid_amount: number;       // confirmed_amount (alias for backward compat)
   remaining: number;
   overpayment: number;
   is_fully_paid: boolean;
-  max_allowed: number; // maximum new payment amount
+  max_allowed: number;       // maximum new payment amount
 }
 
 // ── Service Functions ──────────────────────────────────────────────────────
@@ -119,24 +137,31 @@ export async function getProjectFinancialStatus(
 
   if (projErr || !project) return fail('Project not found.');
 
-  // SUM all existing payments for this project (source of truth)
+  // SUM payments by status (source of truth)
   const { data: payments, error: payErr } = await supabase()
     .from('payments')
-    .select('amount')
+    .select('amount, payment_status')
     .eq('project_id', projectId);
 
   if (payErr) return fail('Failed to load project payments.');
 
   const totalAmount = Number(project.total_amount) || 0;
-  const paidAmount = (payments || []).reduce((s, p) => s + Number(p.amount), 0);
-  const remaining = Math.max(0, totalAmount - paidAmount);
-  const overpayment = Math.max(0, paidAmount - totalAmount);
-  const isFullyPaid = totalAmount > 0 && paidAmount >= totalAmount;
+  const confirmedAmount = (payments || [])
+    .filter(p => p.payment_status === 'confirmed')
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const pendingAmount = (payments || [])
+    .filter(p => p.payment_status === 'pending_proof')
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const remaining = Math.max(0, totalAmount - confirmedAmount);
+  const overpayment = Math.max(0, confirmedAmount - totalAmount);
+  const isFullyPaid = totalAmount > 0 && confirmedAmount >= totalAmount;
 
   return ok({
     project_id: projectId,
     total_amount: totalAmount,
-    paid_amount: paidAmount,
+    confirmed_amount: confirmedAmount,
+    pending_amount: pendingAmount,
+    paid_amount: confirmedAmount,  // backward compat alias
     remaining,
     overpayment,
     is_fully_paid: isFullyPaid,
@@ -170,22 +195,28 @@ export async function createPayment(
     }
   }
 
+  // Derive payment status from method
+  const paymentStatus = derivePaymentStatus(data.payment_method);
+
   // Atomic: insert payment + update project paid_amount in one SQL transaction
   const { data: result, error: rpcErr } = await supabase()
     .rpc('record_payment_atomic', {
-      p_project_id:  data.project_id,
-      p_amount:      data.amount,
-      p_method:      data.payment_method,
-      p_type:        data.payment_type,
-      p_reference:   data.reference_number || null,
-      p_notes:       data.notes || null,
-      p_received_by: data.received_by || null,
-      p_received_at: new Date(data.received_at).toISOString(),
+      p_project_id:     data.project_id,
+      p_amount:         data.amount,
+      p_method:         data.payment_method,
+      p_type:           data.payment_type,
+      p_reference:      data.reference_number || null,
+      p_notes:          data.notes || null,
+      p_received_by:    data.received_by || null,
+      p_received_at:    new Date(data.received_at).toISOString(),
+      p_payment_status: paymentStatus,
+      p_cheque_id:      data.cheque_id || null,
+      p_proof_url:      data.proof_url || null,
     });
 
   if (rpcErr) return fail('Failed to record payment: ' + rpcErr.message);
 
-  return ok({ id: result.payment_id });
+  return ok({ id: result.payment_id, payment_status: result.payment_status });
 }
 
 /**
@@ -304,18 +335,17 @@ export async function syncProjectPaidAmount(
 ): Promise<ServiceResult> {
   if (!projectId) return fail('Project ID is required.');
 
-  // Sum all payments for this project
+  // Sum only CONFIRMED payments for this project (gating source of truth)
   const { data: payments, error: paymentsErr } = await supabase()
     .from('payments')
-    .select('amount')
+    .select('amount, payment_status')
     .eq('project_id', projectId);
 
   if (paymentsErr) return fail('Failed to load payments for sync: ' + paymentsErr.message);
 
-  const totalPaid = (payments || []).reduce(
-    (sum, p) => sum + Number(p.amount),
-    0,
-  );
+  const totalPaid = (payments || [])
+    .filter(p => p.payment_status === 'confirmed')
+    .reduce((sum, p) => sum + Number(p.amount), 0);
 
   const { data: project } = await supabase()
     .from('projects')
@@ -338,6 +368,116 @@ export async function syncProjectPaidAmount(
     .eq('id', projectId);
 
   if (error) return fail('Failed to sync project paid_amount: ' + error.message);
+  return ok();
+}
+
+// ── Payment Status Actions ────────────────────────────────────────────────
+
+/**
+ * Confirm a pending payment. Only confirmed payments count toward gating.
+ * Resyncs project paid_amount and milestone flags.
+ */
+export async function confirmPayment(
+  paymentId: string,
+  proofUrl?: string,
+): Promise<ServiceResult> {
+  if (!paymentId) return fail('Payment ID is required.');
+
+  // Get the payment to find its project
+  const { data: payment, error: fetchErr } = await supabase()
+    .from('payments')
+    .select('project_id, payment_status')
+    .eq('id', paymentId)
+    .single();
+
+  if (fetchErr || !payment) return fail('Payment not found.');
+  if (payment.payment_status === 'confirmed') return fail('Payment is already confirmed.');
+  if (payment.payment_status === 'rejected') return fail('Cannot confirm a rejected payment.');
+
+  // Update status
+  const updates: Record<string, unknown> = { payment_status: 'confirmed' };
+  if (proofUrl) updates.proof_url = proofUrl;
+
+  const { error } = await supabase()
+    .from('payments')
+    .update(updates)
+    .eq('id', paymentId);
+
+  if (error) return fail('Failed to confirm payment: ' + error.message);
+
+  // Resync project flags (now includes this newly confirmed amount)
+  await syncProjectPaidAmount(payment.project_id);
+
+  return ok();
+}
+
+/**
+ * Reject a pending payment. Rejected payments are excluded from all totals.
+ */
+export async function rejectPayment(
+  paymentId: string,
+  reason?: string,
+): Promise<ServiceResult> {
+  if (!paymentId) return fail('Payment ID is required.');
+
+  const { data: payment, error: fetchErr } = await supabase()
+    .from('payments')
+    .select('project_id, payment_status')
+    .eq('id', paymentId)
+    .single();
+
+  if (fetchErr || !payment) return fail('Payment not found.');
+  if (payment.payment_status === 'rejected') return fail('Payment is already rejected.');
+
+  const wasConfirmed = payment.payment_status === 'confirmed';
+
+  const { error } = await supabase()
+    .from('payments')
+    .update({
+      payment_status: 'rejected',
+      notes: reason ? `REJECTED: ${reason}` : 'REJECTED',
+    })
+    .eq('id', paymentId);
+
+  if (error) return fail('Failed to reject payment: ' + error.message);
+
+  // If it was confirmed before, resync to subtract from gating totals
+  if (wasConfirmed) {
+    await syncProjectPaidAmount(payment.project_id);
+  }
+
+  return ok();
+}
+
+/**
+ * Handle cheque status change → auto-confirm/reject linked payment.
+ * Called from the cheques page when a cheque transitions to cleared or bounced.
+ */
+export async function onChequeStatusChange(
+  chequeId: string,
+  newChequeStatus: string,
+): Promise<ServiceResult> {
+  if (!chequeId) return fail('Cheque ID is required.');
+
+  // Find linked payment
+  const { data: payment } = await supabase()
+    .from('payments')
+    .select('id, project_id, payment_status')
+    .eq('cheque_id', chequeId)
+    .single();
+
+  if (!payment) return ok(); // No linked payment — nothing to do
+
+  if (newChequeStatus === 'cleared') {
+    if (payment.payment_status !== 'confirmed') {
+      return confirmPayment(payment.id);
+    }
+  } else if (newChequeStatus === 'bounced') {
+    if (payment.payment_status !== 'rejected') {
+      return rejectPayment(payment.id, 'Chèque rejeté / bounced');
+    }
+  }
+
   return ok();
 }
 

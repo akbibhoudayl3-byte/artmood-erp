@@ -13,6 +13,7 @@ import PhotoUpload from '@/components/ui/PhotoUpload';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { Plus, X } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import { onChequeStatusChange } from '@/lib/services/payment.service';
 
 export default function ChequesPage() {
   const { t } = useLocale();
@@ -85,6 +86,10 @@ export default function ChequesPage() {
     if (error) {
       alert('Error: ' + error.message);
     } else {
+      // Auto-confirm/reject linked payment when cheque clears or bounces
+      if (newStatus === 'cleared' || newStatus === 'bounced') {
+        await onChequeStatusChange(chequeId, newStatus);
+      }
       setSuccessMsg(`Cheque marked as ${newStatus}`);
       setTimeout(() => setSuccessMsg(''), 3000);
       loadCheques();
@@ -95,7 +100,7 @@ export default function ChequesPage() {
 
   const STATUS_FLOW: Record<string, { label: string; next: { status: string; label: string; color: string }[] }> = {
     pending: {
-      label: 'Pending',
+      label: 'Reçu / En main',
       next: [
         { status: 'deposited', label: 'Mark Deposited', color: 'bg-blue-600' },
         { status: 'bounced', label: 'Mark Bounced', color: 'bg-red-600' },

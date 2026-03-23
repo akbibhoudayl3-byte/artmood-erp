@@ -15,7 +15,7 @@ import { useFormModal } from '@/lib/hooks/useFormModal';
 import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
 import type { PaymentType, PaymentMethod } from '@/types/database';
 import { RoleGuard } from '@/components/auth/RoleGuard';
-import { Plus, Banknote, TrendingUp, Pencil, Trash2, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
+import { Plus, Banknote, TrendingUp, Pencil, Trash2, AlertTriangle, CheckCircle, ShieldAlert, Clock, XCircle } from 'lucide-react';
 import { createLedgerEntry } from '@/lib/helpers/ledger';
 import {
   loadPayments as loadPaymentsSvc,
@@ -25,6 +25,8 @@ import {
   deletePayment,
   syncProjectPaidAmount,
   getProjectFinancialStatus,
+  confirmPayment as confirmPaymentSvc,
+  rejectPayment as rejectPaymentSvc,
   type PaymentWithProject,
   type CreatePaymentData,
   type ProjectFinancialStatus,
@@ -246,12 +248,45 @@ export default function PaymentsPage() {
     fetchData();
   }
 
+  // ── Confirm / Reject handlers ─────────────────────────────────────────
+  async function handleConfirm(p: PaymentWithProject) {
+    const res = await confirmPaymentSvc(p.id);
+    if (res.success) {
+      setSuccessMsg('Paiement confirmé.');
+      fetchData();
+    } else {
+      setErrorMsg(res.error || 'Échec de la confirmation.');
+    }
+  }
+
+  function handleRejectClick(p: PaymentWithProject) {
+    confirm.open({
+      title: 'Rejeter le paiement',
+      message: `Rejeter ce paiement de ${fmtAmount(Number(p.amount))} ? Cette action ne peut pas être annulée facilement.`,
+      onConfirm: async () => {
+        const res = await rejectPaymentSvc(p.id, 'Rejeté manuellement');
+        if (res.success) {
+          setSuccessMsg('Paiement rejeté.');
+          fetchData();
+        } else {
+          setErrorMsg(res.error || 'Échec du rejet.');
+        }
+      },
+    });
+  }
+
   // ── Computed ───────────────────────────────────────────────────────────
   const now = new Date();
+  const confirmedTotal = payments
+    .filter(p => p.payment_status === 'confirmed')
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const pendingTotal = payments
+    .filter(p => p.payment_status === 'pending_proof')
+    .reduce((s, p) => s + Number(p.amount), 0);
   const totalThisMonth = payments
     .filter(p => {
       const d = new Date(p.received_at);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && p.payment_status === 'confirmed';
     })
     .reduce((s, p) => s + Number(p.amount), 0);
 
@@ -288,22 +323,42 @@ export default function PaymentsPage() {
         <ErrorBanner message={successMsg} type="success" onDismiss={() => setSuccessMsg(null)} autoDismiss={4000} />
         <ErrorBanner message={errorMsg} type="error" onDismiss={() => setErrorMsg(null)} />
 
-        {/* Summary */}
-        <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-100">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
-              <TrendingUp size={20} className="text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-xs text-emerald-600 font-medium uppercase tracking-wider">
-                {payments.length} {t('finance.payments') || 'payments'}
-              </p>
-              <p className="text-2xl font-bold text-emerald-700">
-                {fmtAmount(payments.reduce((s, p) => s + Number(p.amount), 0))}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Summary cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-100">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
+                <CheckCircle size={18} className="text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider">Confirmé</p>
+                <p className="text-xl font-bold text-emerald-700">{fmtAmount(confirmedTotal)}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className={`border-amber-100 ${pendingTotal > 0 ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : 'bg-gray-50'}`}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${pendingTotal > 0 ? 'bg-amber-100' : 'bg-gray-100'}`}>
+                <Clock size={18} className={pendingTotal > 0 ? 'text-amber-600' : 'text-gray-400'} />
+              </div>
+              <div>
+                <p className={`text-[10px] font-medium uppercase tracking-wider ${pendingTotal > 0 ? 'text-amber-600' : 'text-gray-400'}`}>En attente</p>
+                <p className={`text-xl font-bold ${pendingTotal > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{fmtAmount(pendingTotal)}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100 hidden md:block">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                <TrendingUp size={18} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="text-[10px] text-blue-600 font-medium uppercase tracking-wider">Ce mois</p>
+                <p className="text-xl font-bold text-blue-700">{fmtAmount(totalThisMonth)}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Desktop table */}
         <Card className="hidden md:block overflow-hidden">
@@ -315,6 +370,7 @@ export default function PaymentsPage() {
                   <th className="text-left px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">{t('common.project')}</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">Type</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">{t('finance.payment_method')}</th>
+                  <th className="text-center px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">Statut</th>
                   <th className="text-right px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">{t('common.amount')}</th>
                   <th className="text-center px-5 py-3.5 font-semibold text-[#64648B] text-xs uppercase tracking-wider">Actions</th>
                 </tr>
@@ -322,7 +378,7 @@ export default function PaymentsPage() {
               <tbody className="divide-y divide-[#F0EDE8]">
                 {payments.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <EmptyState
                         icon={<Banknote size={32} className="opacity-30" />}
                         title={t('common.no_results') || 'No payments found'}
@@ -342,11 +398,42 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-5 py-3.5"><StatusBadge status={p.payment_type} /></td>
                     <td className="px-5 py-3.5 text-[#64648B] text-xs">{p.payment_method || '\u2014'}</td>
-                    <td className="px-5 py-3.5 text-right font-semibold text-emerald-600">
-                      +{fmtAmount(Number(p.amount))}
+                    <td className="px-5 py-3.5 text-center">
+                      {p.payment_status === 'confirmed' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">
+                          <CheckCircle size={10} /> Confirmé
+                        </span>
+                      )}
+                      {p.payment_status === 'pending_proof' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700">
+                          <Clock size={10} /> En attente
+                        </span>
+                      )}
+                      {p.payment_status === 'rejected' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700">
+                          <XCircle size={10} /> Rejeté
+                        </span>
+                      )}
+                    </td>
+                    <td className={`px-5 py-3.5 text-right font-semibold ${
+                      p.payment_status === 'confirmed' ? 'text-emerald-600' :
+                      p.payment_status === 'rejected' ? 'text-red-400 line-through' :
+                      'text-amber-600'
+                    }`}>
+                      {p.payment_status !== 'rejected' ? '+' : ''}{fmtAmount(Number(p.amount))}
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-center gap-1">
+                        {p.payment_status === 'pending_proof' && (
+                          <>
+                            <button onClick={() => handleConfirm(p)} className="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-colors" title="Confirmer">
+                              <CheckCircle size={14} />
+                            </button>
+                            <button onClick={() => handleRejectClick(p)} className="p-1.5 rounded text-red-500 hover:bg-red-50 transition-colors" title="Rejeter">
+                              <XCircle size={14} />
+                            </button>
+                          </>
+                        )}
                         <button onClick={() => openEdit(p)} className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
                           <Pencil size={14} />
                         </button>
@@ -377,6 +464,12 @@ export default function PaymentsPage() {
                     {p.payment_method && (
                       <span className="text-[11px] text-[#64648B]">{p.payment_method}</span>
                     )}
+                    {p.payment_status === 'pending_proof' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">En attente</span>
+                    )}
+                    {p.payment_status === 'rejected' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 font-semibold">Rejeté</span>
+                    )}
                   </div>
                   <p className="text-sm font-medium text-[#1a1a2e] truncate">{p.project?.client_name || '\u2014'}</p>
                   <p className="text-xs text-[#64648B] mt-0.5">
@@ -384,10 +477,24 @@ export default function PaymentsPage() {
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0 ml-3">
-                  <p className="font-bold text-emerald-600 text-sm">
-                    +{fmtAmount(Number(p.amount))}
+                  <p className={`font-bold text-sm ${
+                    p.payment_status === 'confirmed' ? 'text-emerald-600' :
+                    p.payment_status === 'rejected' ? 'text-red-400 line-through' :
+                    'text-amber-600'
+                  }`}>
+                    {p.payment_status !== 'rejected' ? '+' : ''}{fmtAmount(Number(p.amount))}
                   </p>
                   <div className="flex items-center gap-1">
+                    {p.payment_status === 'pending_proof' && (
+                      <>
+                        <button onClick={() => handleConfirm(p)} className="p-1 rounded text-emerald-600 hover:bg-emerald-50" title="Confirmer">
+                          <CheckCircle size={13} />
+                        </button>
+                        <button onClick={() => handleRejectClick(p)} className="p-1 rounded text-red-500 hover:bg-red-50" title="Rejeter">
+                          <XCircle size={13} />
+                        </button>
+                      </>
+                    )}
                     <button onClick={() => openEdit(p)} className="p-1 rounded text-blue-600 hover:bg-blue-50" title="Edit">
                       <Pencil size={13} />
                     </button>

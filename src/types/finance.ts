@@ -8,6 +8,7 @@ import type { ProductionStation } from './production';
 
 export type PaymentType = 'deposit' | 'pre_installation' | 'final' | 'other';
 export type PaymentMethod = 'cash' | 'cheque' | 'bank_transfer' | 'card' | 'other';
+export type PaymentStatus = 'confirmed' | 'pending_proof' | 'rejected';
 
 export type ChequeType = 'received' | 'issued';
 export type ChequeStatus = 'pending' | 'deposited' | 'cleared' | 'bounced' | 'cancelled';
@@ -25,11 +26,14 @@ export interface Payment {
   amount: number;
   payment_type: PaymentType;
   payment_method: PaymentMethod | null;
+  payment_status: PaymentStatus;
   reference_number: string | null;
   notes: string | null;
   received_by: string | null;
   received_at: string;
   created_at: string;
+  proof_url: string | null;
+  cheque_id: string | null;
   project?: Project;
 }
 
