@@ -131,6 +131,7 @@ export async function POST(
     supabase:  ctx.supabase,
     override,
     userRole:  ctx.role,
+    notes,
   });
 
   // ── DEBUG: structured transition decision log ──────────────────────────
@@ -178,14 +179,16 @@ export async function POST(
   }
 
   // ── Audit log ─────────────────────────────────────────────────────────────
-  // (DB trigger log_project_status_change also fires — this is belt-and-suspenders)
+  const isReopen = fromStatus === 'measurements_confirmed' && toStatus === 'measurements';
   await ctx.audit({
-    action:      'status_change',
+    action:      isReopen ? 'measurements_reopened' : 'status_change',
     entity_type: 'project',
     entity_id:   projectId,
     old_value:   { status: fromStatus },
     new_value:   { status: toStatus },
-    notes:       `Project transition: ${fromStatus} → ${toStatus}${notes ? `. Notes: ${notes}` : ''}`,
+    notes:       isReopen
+      ? `Measurements reopened: ${fromStatus} → ${toStatus}. Reason: ${notes}`
+      : `Project transition: ${fromStatus} → ${toStatus}${notes ? `. Notes: ${notes}` : ''}`,
   });
 
   return NextResponse.json({

@@ -15,7 +15,7 @@ import type { ProjectStatus } from '@/types/database';
 
 export const VALID_TRANSITIONS: Record<ProjectStatus, readonly ProjectStatus[]> = {
   measurements:              ['measurements_confirmed', 'design', 'cancelled'],
-  measurements_confirmed:    ['design', 'cancelled'],
+  measurements_confirmed:    ['design', 'measurements', 'cancelled'],
   design:                    ['client_validation', 'measurements', 'cancelled'],
   client_validation:         ['production', 'design', 'cancelled'],
   production:                ['installation', 'cancelled'],

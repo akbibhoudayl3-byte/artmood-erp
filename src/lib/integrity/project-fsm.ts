@@ -56,19 +56,46 @@ export type TransitionResult =
  * Returns list of violation messages (empty = all pass).
  */
 function checkHardPreConditions(
+  from: ProjectStatus,
   to: ProjectStatus,
   project: {
     client_latitude: number | null;
     client_longitude: number | null;
     client_gps_validated: boolean;
   },
+  notes: string,
 ): string[] {
   const violations: string[] = [];
 
-  // GPS required before installation (installer needs the address)
+  const hasGPS = project.client_latitude != null && project.client_longitude != null;
+
+  // GPS required at measurements confirmation (earliest field visit checkpoint)
+  if (to === 'measurements_confirmed') {
+    if (!hasGPS) {
+      violations.push(
+        'Client GPS location is required before confirming measurements. ' +
+        'Go to Project Settings or Visit Form and record the client location.'
+      );
+    }
+  }
+
+  // GPS required before installation (backup hard block)
   if (to === 'installation') {
-    if (!project.client_latitude || !project.client_longitude) {
-      violations.push('GPS coordinates are required before scheduling installation (GPS_REQUIRED)');
+    if (!hasGPS) {
+      violations.push(
+        'Client GPS location is required before scheduling installation. ' +
+        'Go to Project Settings and record the client location.'
+      );
+    }
+  }
+
+  // Reopen measurements: mandatory reason required
+  if (from === 'measurements_confirmed' && to === 'measurements') {
+    if (!notes || notes.trim().length === 0) {
+      violations.push(
+        'A reason is required to reopen measurements. ' +
+        'Provide a reopen reason explaining why measurements need to be redone.'
+      );
     }
   }
 
@@ -186,8 +213,9 @@ export async function validateProjectTransition(params: {
     client_gps_validated: boolean;
   };
   supabase: SupabaseClient;
+  notes?: string;
 }): Promise<TransitionResult> {
-  const { from, to, projectId, project, supabase } = params;
+  const { from, to, projectId, project, supabase, notes = '' } = params;
 
   // ── Step 1: FSM edge check — HARD BLOCK ────────────────────────────────
   if (!_isValidTransition(from, to)) {
@@ -203,11 +231,15 @@ export async function validateProjectTransition(params: {
   }
 
   // ── Step 2: Hard pre-conditions — HARD BLOCK ───────────────────────────
-  const hardViolations = checkHardPreConditions(to, project);
+  const hardViolations = checkHardPreConditions(from, to, project, notes);
 
   if (hardViolations.length > 0) {
     console.log('[transition:validation]', JSON.stringify({
       hardErrorsCount: hardViolations.length, softWarningsCount: 0, validationStageReached: 'step2_hard',
+      from, to,
+      client_latitude: project.client_latitude,
+      client_longitude: project.client_longitude,
+      client_gps_validated: project.client_gps_validated,
       violations: hardViolations,
     }));
     return {
@@ -262,6 +294,7 @@ export async function guardProjectTransition(params: {
   supabase: SupabaseClient;
   override?: boolean;
   userRole?: string;
+  notes?: string;
 }): Promise<null | NextResponse> {
   const result = await validateProjectTransition(params);
   if (result.allowed) return null;

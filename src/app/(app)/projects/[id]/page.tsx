@@ -80,6 +80,9 @@ export default function ProjectDetailPage() {
   const [files, setFiles] = useState<{ url: string; name: string }[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [capturingGPS, setCapturingGPS] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
+  const [showReopenPrompt, setShowReopenPrompt] = useState(false);
   const [generatingQuote, setGeneratingQuote] = useState(false);
   const [schedulingInstall, setSchedulingInstall] = useState(false);
   const [installDate, setInstallDate] = useState('');
@@ -310,9 +313,56 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function handleStatusChange(newStatus: ProjectStatus, override = false) {
+  // ── GPS Capture (used when hard block fires for missing GPS) ────────────────
+  async function captureClientGPS() {
+    if (!project || !id) return;
+    setCapturingGPS(true);
+    setErrorMsg(null);
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+        });
+      });
+      const { latitude, longitude, accuracy } = pos.coords;
+      const { createClient } = await import('@/lib/supabase/client');
+      const sb = createClient();
+      const { error } = await sb.from('projects').update({
+        client_latitude: latitude,
+        client_longitude: longitude,
+        client_gps_accuracy: accuracy,
+        client_gps_captured_at: new Date().toISOString(),
+        client_gps_captured_by: profile?.id || null,
+        client_gps_validated: true,
+      }).eq('id', id);
+      if (error) {
+        setErrorMsg('Failed to save GPS: ' + error.message);
+      } else {
+        setSuccessMsg(`GPS saved: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (±${Math.round(accuracy)}m)`);
+        reload();
+      }
+    } catch (err: any) {
+      const msg = err?.code === 1 ? 'GPS permission denied. Enable location access.'
+        : err?.code === 2 ? 'GPS unavailable. Try again outside.'
+        : err?.code === 3 ? 'GPS timeout. Try again.'
+        : 'GPS error: ' + (err?.message || 'unknown');
+      setErrorMsg(msg);
+    } finally {
+      setCapturingGPS(false);
+    }
+  }
+
+  async function handleStatusChange(newStatus: ProjectStatus, override = false, notes = '') {
     if (!project) return;
     setErrorMsg(null);
+
+    // ── Reopen measurements: require reason via prompt ────────────────────
+    const isReopen = project.status === 'measurements_confirmed' && newStatus === 'measurements';
+    if (isReopen && !notes) {
+      setShowReopenPrompt(true);
+      return;
+    }
 
     // ── Layer 2: Parts validation before production (HARD BLOCK only) ───────
     // Checks structurally impossible parts: zero dims, missing material,
@@ -347,7 +397,7 @@ export default function ProjectDetailPage() {
       const res = await fetch(`/api/projects/${id}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, override }),
+        body: JSON.stringify({ status: newStatus, override, notes: notes || undefined }),
       });
 
       const data = await res.json();
@@ -411,6 +461,13 @@ export default function ProjectDetailPage() {
     <div className="space-y-4">
       {/* Banners */}
       <ErrorBanner message={errorMsg} type="error" onDismiss={() => setErrorMsg(null)} />
+      {errorMsg && errorMsg.includes('GPS') && (
+        <div className="flex gap-2 -mt-2 mb-2">
+          <Button size="sm" variant="accent" onClick={captureClientGPS} loading={capturingGPS}>
+            <MapPin size={14} className="mr-1" /> Set Client Location
+          </Button>
+        </div>
+      )}
       <ErrorBanner message={successMsg} type="success" onDismiss={() => setSuccessMsg(null)} autoDismiss={3000} />
       <ErrorBanner message={loadError} type="warning" onDismiss={() => {}} />
 
@@ -975,6 +1032,49 @@ export default function ProjectDetailPage() {
         confirmLabel="Override & Proceed"
         loading={confirm.loading}
       />
+
+      {/* Reopen Measurements — Reason Prompt */}
+      {showReopenPrompt && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#1a1a2e] rounded-2xl w-full max-w-sm shadow-xl p-6">
+            <h3 className="font-bold text-[#1a1a2e] dark:text-white text-lg mb-2">
+              Reopen Measurements
+            </h3>
+            <p className="text-sm text-[#64648B] dark:text-gray-400 mb-4">
+              Provide a reason for reopening measurements. This will be logged in the audit trail.
+            </p>
+            <textarea
+              value={reopenReason}
+              onChange={e => setReopenReason(e.target.value)}
+              placeholder="e.g. Client requested dimension changes after site revisit..."
+              className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm mb-4 min-h-[80px] resize-none"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => { setShowReopenPrompt(false); setReopenReason(''); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="accent"
+                className="flex-1"
+                disabled={!reopenReason.trim()}
+                onClick={async () => {
+                  const reason = reopenReason.trim();
+                  setShowReopenPrompt(false);
+                  setReopenReason('');
+                  await handleStatusChange('measurements' as ProjectStatus, false, reason);
+                }}
+              >
+                Reopen
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
       </RoleGuard>
