@@ -97,14 +97,10 @@ export default function TopBar({ onMenuClick, pageTitle }: TopBarProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Handle notification click: mark read + navigate if link present
+  // Handle notification click: mark as read
   async function handleNotifClick(notif: NotificationItem) {
     if (!notif.is_read) {
       await markAsRead(notif.id);
-    }
-    if (notif.link) {
-      setShowNotifs(false);
-      router.push(notif.link);
     }
   }
 
