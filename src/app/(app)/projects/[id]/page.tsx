@@ -672,14 +672,25 @@ export default function ProjectDetailPage() {
           <CardHeader><h2 className="font-semibold text-sm">{t('projects.timeline')}</h2></CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {events.map(evt => (
-                <div key={evt.id} className="flex gap-3 text-sm border-l-2 border-gray-200 pl-3">
-                  <div>
-                    <p className="text-gray-700">{evt.description}</p>
-                    <p className="text-xs text-gray-400">{new Date(evt.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+              {events.map(evt => {
+                const meta = evt.metadata as { reopen?: boolean; reason?: string } | null;
+                const isReopenEvt = evt.event_type === 'measurements_reopened' || meta?.reopen;
+                return (
+                  <div key={evt.id} className={`flex gap-3 text-sm border-l-2 pl-3 ${isReopenEvt ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-r-lg py-1.5 pr-2' : 'border-gray-200'}`}>
+                    <div>
+                      <p className={`${isReopenEvt ? 'text-amber-800 dark:text-amber-300 font-medium' : 'text-gray-700'}`}>
+                        {evt.description}
+                      </p>
+                      {meta?.reason && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 italic">
+                          Raison: {meta.reason}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400">{new Date(evt.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

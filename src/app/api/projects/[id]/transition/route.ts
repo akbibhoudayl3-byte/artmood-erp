@@ -191,6 +191,22 @@ export async function POST(
       : `Project transition: ${fromStatus} → ${toStatus}${notes ? `. Notes: ${notes}` : ''}`,
   });
 
+  // ── Timeline event (project_events) — enriched for reopens ───────────────
+  // The DB trigger creates a generic "Project moved from X to Y" entry.
+  // For reopens (and any transition with notes), insert a detailed entry
+  // so the reason is visible in the Chronologie UI.
+  if (isReopen && notes) {
+    await ctx.supabase.from('project_events').insert({
+      project_id:  projectId,
+      user_id:     ctx.userId,
+      event_type:  'measurements_reopened',
+      old_value:   fromStatus,
+      new_value:   toStatus,
+      description: `Mesures réouvertes: ${fromStatus} → ${toStatus}. Raison: ${notes}`,
+      metadata:    { reopen: true, reason: notes },
+    });
+  }
+
   return NextResponse.json({
     ok:      true,
     project: updated,
