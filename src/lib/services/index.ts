@@ -272,7 +272,7 @@ export async function recordPayment(payload: PaymentPayload): Promise<ServiceRes
 
 export type ProjectStatus =
   | 'measurements' | 'measurements_confirmed' | 'design' | 'client_validation'
-  | 'production' | 'installation' | 'completed' | 'cancelled';
+  | 'production' | 'installation' | 'delivered' | 'cancelled';
 
 export async function updateProjectStatus(
   projectId: string,
