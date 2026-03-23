@@ -666,58 +666,35 @@ export default function ProjectDetailPage() {
         </Card>
       )}
 
-      {/* Timeline — deduplicated */}
-      {events.length > 0 && (() => {
-        // Deduplicate: keep only one event per (event_type, old_value, new_value, second).
-        // If a measurements_reopened event exists, suppress the matching status_change.
-        const reopenKeys = new Set(
-          events
-            .filter(e => e.event_type === 'measurements_reopened')
-            .map(e => `${e.old_value}|${e.new_value}|${(e.created_at || '').substring(0, 19)}`)
-        );
-
-        const seen = new Set<string>();
-        const deduped = events.filter(evt => {
-          const sec = (evt.created_at || '').substring(0, 19);
-          // If this is a generic status_change that has a matching reopen event, skip it
-          if (evt.event_type === 'status_change' && reopenKeys.has(`${evt.old_value}|${evt.new_value}|${sec}`)) {
-            return false;
-          }
-          const key = `${evt.event_type}|${evt.old_value}|${evt.new_value}|${sec}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-
-        return deduped.length > 0 ? (
-          <Card>
-            <CardHeader><h2 className="font-semibold text-sm">{t('projects.timeline')}</h2></CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {deduped.map(evt => {
-                  const meta = evt.metadata as { reopen?: boolean; reason?: string } | null;
-                  const isReopenEvt = evt.event_type === 'measurements_reopened' || meta?.reopen;
-                  return (
-                    <div key={evt.id} className={`flex gap-3 text-sm border-l-2 pl-3 ${isReopenEvt ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-r-lg py-1.5 pr-2' : 'border-gray-200'}`}>
-                      <div>
-                        <p className={`${isReopenEvt ? 'text-amber-800 dark:text-amber-300 font-medium' : 'text-gray-700'}`}>
-                          {evt.description}
+      {/* Timeline */}
+      {events.length > 0 && (
+        <Card>
+          <CardHeader><h2 className="font-semibold text-sm">{t('projects.timeline')}</h2></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {events.map(evt => {
+                const meta = evt.metadata as { reopen?: boolean; reason?: string } | null;
+                const isReopenEvt = evt.event_type === 'measurements_reopened' || meta?.reopen;
+                return (
+                  <div key={evt.id} className={`flex gap-3 text-sm border-l-2 pl-3 ${isReopenEvt ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-r-lg py-1.5 pr-2' : 'border-gray-200'}`}>
+                    <div>
+                      <p className={`${isReopenEvt ? 'text-amber-800 dark:text-amber-300 font-medium' : 'text-gray-700'}`}>
+                        {evt.description}
+                      </p>
+                      {meta?.reason && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 italic">
+                          Raison: {meta.reason}
                         </p>
-                        {meta?.reason && (
-                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 italic">
-                            Raison: {meta.reason}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-400">{new Date(evt.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
-                      </div>
+                      )}
+                      <p className="text-xs text-gray-400">{new Date(evt.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        ) : null;
-      })()}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Factory Tools */}
       <Card>
