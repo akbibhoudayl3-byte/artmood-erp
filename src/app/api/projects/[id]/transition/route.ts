@@ -181,13 +181,13 @@ export async function POST(
   // ── Audit log ─────────────────────────────────────────────────────────────
   const isReopen = fromStatus === 'measurements_confirmed' && toStatus === 'measurements';
   await ctx.audit({
-    action:      isReopen ? 'measurements_reopened' : 'status_change',
+    action:      'status_change',
     entity_type: 'project',
     entity_id:   projectId,
     old_value:   { status: fromStatus },
-    new_value:   { status: toStatus },
+    new_value:   { status: toStatus, ...(isReopen ? { reopen: true } : {}) },
     notes:       isReopen
-      ? `Measurements reopened: ${fromStatus} → ${toStatus}. Reason: ${notes}`
+      ? `MEASUREMENTS REOPENED: ${fromStatus} → ${toStatus}. Reason: ${notes}`
       : `Project transition: ${fromStatus} → ${toStatus}${notes ? `. Notes: ${notes}` : ''}`,
   });
 
