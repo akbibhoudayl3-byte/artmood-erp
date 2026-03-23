@@ -2,52 +2,21 @@
 -- Migration: Fix timeline duplication for project status changes
 -- Date: 2026-03-23
 --
--- Root cause: DB trigger log_project_status_change fires once per UPDATE,
--- but sometimes produces duplicate rows. Additionally, reopen transitions
--- (measurements_confirmed → measurements) create 3 rows: 2 from trigger
--- + 1 from API.
+-- ROOT CAUSE (verified via Supabase SQL Editor):
+-- TWO triggers on public.projects called the SAME function:
+--   trg_project_status_log  → log_project_status_change()  (original)
+--   trg_log_project_status  → log_project_status_change()  (duplicate)
+-- One UPDATE fired both triggers → 2 identical rows in project_events.
 --
--- Fix:
--- 1. Skip reopen transitions in trigger (API handles with reason/metadata)
--- 2. Add dedup guard to prevent identical events within 2 seconds
--- 3. Clean up existing duplicate rows
+-- Fix: Drop the duplicate trigger. Keep only trg_project_status_log.
+-- Applied via Supabase SQL Editor on 2026-03-23.
 -- ============================================================================
 
--- Step 1: Replace trigger function
-CREATE OR REPLACE FUNCTION log_project_status_change()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF OLD.status IS DISTINCT FROM NEW.status THEN
-        -- Skip reopen transitions: API inserts these with reason + metadata
-        IF OLD.status = 'measurements_confirmed' AND NEW.status = 'measurements' THEN
-            RETURN NEW;
-        END IF;
+-- Step 1: Drop the duplicate trigger
+DROP TRIGGER IF EXISTS trg_log_project_status ON public.projects;
 
-        -- Dedup guard: skip if identical event exists within last 2 seconds
-        IF EXISTS (
-            SELECT 1 FROM public.project_events
-            WHERE project_id = NEW.id
-              AND event_type = 'status_change'
-              AND old_value = OLD.status
-              AND new_value = NEW.status
-              AND created_at > now() - interval '2 seconds'
-        ) THEN
-            RETURN NEW;
-        END IF;
-
-        INSERT INTO public.project_events (project_id, event_type, old_value, new_value, description)
-        VALUES (NEW.id, 'status_change', OLD.status, NEW.status,
-                'Status changed from ' || OLD.status || ' to ' || NEW.status);
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Step 2: Clean up existing duplicate rows (keep only the latest per group)
-DELETE FROM public.project_events
-WHERE id NOT IN (
-    SELECT DISTINCT ON (project_id, event_type, old_value, new_value, date_trunc('second', created_at))
-           id
-    FROM public.project_events
-    ORDER BY project_id, event_type, old_value, new_value, date_trunc('second', created_at), created_at DESC
-);
+-- Verification (run manually):
+-- SELECT t.tgname, p.proname FROM pg_trigger t
+-- JOIN pg_class c ON t.tgrelid = c.oid JOIN pg_proc p ON t.tgfoid = p.oid
+-- WHERE c.relname = 'projects' AND p.proname = 'log_project_status_change';
+-- Expected: 1 row only (trg_project_status_log)
