@@ -29,13 +29,14 @@ import type { ProjectStatus, Project } from '@/types/crm';
  * or explicitly backwards (to handle corrections / cancellations).
  */
 const FORWARD_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
-  measurements:      ['design', 'cancelled'],
-  design:            ['client_validation', 'cancelled'],
-  client_validation: ['production', 'design', 'cancelled'],
-  production:        ['installation', 'cancelled'],
-  installation:      ['delivered', 'cancelled'],
-  delivered:         [],                          // terminal
-  cancelled:         ['measurements'],            // allow re-opening
+  measurements:              ['measurements_confirmed', 'design', 'cancelled'],
+  measurements_confirmed:    ['design', 'cancelled'],
+  design:                    ['client_validation', 'cancelled'],
+  client_validation:         ['production', 'design', 'cancelled'],
+  production:                ['installation', 'cancelled'],
+  installation:              ['delivered', 'cancelled'],
+  delivered:                 [],                          // terminal
+  cancelled:                 ['measurements'],            // allow re-opening
 };
 
 /**
@@ -43,6 +44,7 @@ const FORWARD_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
  */
 const STATUS_ORDER: ProjectStatus[] = [
   'measurements',
+  'measurements_confirmed',
   'design',
   'client_validation',
   'production',
