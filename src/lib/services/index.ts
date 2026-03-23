@@ -180,8 +180,7 @@ export async function reserveStock(
 
   const available = item.current_quantity - item.reserved_quantity;
   if (quantity > available) {
-    // Allow with warning — caller can decide whether to block
-    console.warn(`[reserveStock] Over-reserving ${item.name}: need ${quantity}, available ${available}`);
+    return fail(`Insufficient stock: available=${available} ${item.unit || 'units'}, requested=${quantity} for "${item.name}".`);
   }
 
   // Update reserved_quantity
@@ -249,35 +248,22 @@ export async function recordPayment(payload: PaymentPayload): Promise<ServiceRes
   if (!payload.amount || payload.amount <= 0) return fail('Payment amount must be greater than zero.');
   if (!payload.received_at) return fail('Payment date is required.');
 
+  // Atomic: insert payment + update project paid_amount in one SQL transaction
   const { data, error } = await supabase()
-    .from('payments')
-    .insert(payload)
-    .select('id')
-    .single();
+    .rpc('record_payment_atomic', {
+      p_project_id:  payload.project_id,
+      p_amount:      payload.amount,
+      p_method:      payload.payment_method,
+      p_type:        payload.payment_type,
+      p_reference:   payload.reference_number || null,
+      p_notes:       payload.notes || null,
+      p_received_by: payload.received_by || null,
+      p_received_at: new Date(payload.received_at).toISOString(),
+    });
 
   if (error) return fail('Failed to record payment: ' + error.message);
 
-  // Update project paid_amount (denormalized for performance)
-  const { data: project } = await supabase()
-    .from('projects')
-    .select('paid_amount, total_amount')
-    .eq('id', payload.project_id)
-    .single();
-
-  if (project) {
-    const newPaid = (project.paid_amount || 0) + payload.amount;
-    const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
-
-    await supabase().from('projects').update({
-      paid_amount: newPaid,
-      deposit_paid: pct >= 0.5,
-      pre_install_paid: pct >= 0.9,
-      final_paid: pct >= 1.0,
-      updated_at: new Date().toISOString(),
-    }).eq('id', payload.project_id);
-  }
-
-  return ok({ id: data.id });
+  return ok({ id: data.payment_id });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -285,7 +271,7 @@ export async function recordPayment(payload: PaymentPayload): Promise<ServiceRes
 // ════════════════════════════════════════════════════════════════════════════
 
 export type ProjectStatus =
-  | 'measurements' | 'design' | 'client_validation'
+  | 'measurements' | 'measurements_confirmed' | 'design' | 'client_validation'
   | 'production' | 'installation' | 'completed' | 'cancelled';
 
 export async function updateProjectStatus(
@@ -362,85 +348,25 @@ export async function recordProductionUsage(payload: ProductionUsagePayload): Pr
   if (payload.used_qty <= 0) return fail('Used quantity must be greater than zero.');
   if (payload.waste_qty < 0) return fail('Waste quantity cannot be negative.');
 
-  // 1. Insert stock movement (negative = deduction from stock)
-  const movResult = await recordStockMovement({
-    stock_item_id: payload.material_id,
-    direction: 'out',
-    quantity: payload.used_qty,
-    notes: `Production: ${payload.order_name || payload.production_order_id} | Stage: ${payload.stage}${payload.notes ? ' | ' + payload.notes : ''}`,
-    created_by: payload.worker_id,
-    reference_type: 'production_order',
-    reference_id: payload.production_order_id,
-    project_id: payload.project_id,
-    movement_type: 'production_out',
-  });
-
-  if (!movResult.success) return movResult;
-
-  // 2. Get movement ID for audit trail
-  const { data: lastMov } = await createClient()
-    .from('stock_movements')
-    .select('id')
-    .eq('stock_item_id', payload.material_id)
-    .eq('reference_id', payload.production_order_id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  // 3. Create usage record
-  const { error: useErr } = await createClient().from('production_material_usage').insert({
-    production_order_id: payload.production_order_id,
-    requirement_id: payload.requirement_id,
-    material_id: payload.material_id,
-    used_qty: payload.used_qty,
-    waste_qty: payload.waste_qty,
-    unit: payload.unit,
-    stage: payload.stage,
-    worker_id: payload.worker_id || null,
-    movement_id: lastMov?.id || null,
-    notes: payload.notes || null,
-  });
-
-  if (useErr) return fail('Failed to record usage: ' + useErr.message);
-
-  // 4. Create waste_record if there is waste
-  if (payload.waste_qty > 0 && payload.material_name) {
-    await createClient().from('waste_records').insert({
-      sheet_id: null,
-      production_order_id: payload.production_order_id,
-      project_id: payload.project_id,
-      material: payload.material_name,
-      length_mm: 1000,
-      width_mm: Math.round(payload.waste_qty * 1000),
-      is_reusable: false,
-      notes: `Production waste: ${payload.waste_qty} ${payload.unit} | Order: ${payload.order_name || ''} | Stage: ${payload.stage}`,
-      created_by: payload.worker_id || null,
+  // Atomic: all 6 steps in one SQL transaction
+  const { data, error } = await supabase()
+    .rpc('record_production_usage_atomic', {
+      p_production_order_id: payload.production_order_id,
+      p_requirement_id:     payload.requirement_id,
+      p_material_id:        payload.material_id,
+      p_project_id:         payload.project_id,
+      p_used_qty:           payload.used_qty,
+      p_waste_qty:          payload.waste_qty,
+      p_unit:               payload.unit,
+      p_stage:              payload.stage,
+      p_worker_id:          payload.worker_id || null,
+      p_notes:              payload.notes || null,
+      p_order_name:         payload.order_name || null,
+      p_material_name:      payload.material_name || null,
+      p_planned_qty:        payload.planned_qty ?? null,
     });
-  }
 
-  // 5. Audit waste movement (quantity: 0 — no additional stock deduction)
-  if (payload.waste_qty > 0) {
-    await createClient().from('stock_movements').insert({
-      stock_item_id: payload.material_id,
-      movement_type: 'production_waste',
-      quantity: 0,
-      reference_type: 'production_order',
-      reference_id: payload.production_order_id,
-      project_id: payload.project_id,
-      notes: `Waste: ${payload.waste_qty} ${payload.unit} from ${payload.material_name || 'unknown'} | Stage: ${payload.stage}`,
-      created_by: payload.worker_id || null,
-    });
-  }
-
-  // 6. Mark requirement as consumed + release reservation
-  await createClient().from('production_material_requirements')
-    .update({ status: 'consumed' })
-    .eq('id', payload.requirement_id)
-    ;
-
-  if (payload.reserved_quantity !== undefined && payload.planned_qty !== undefined) {
-    await releaseStockReservation(payload.material_id, payload.planned_qty);
-  }
+  if (error) return fail('Production usage failed: ' + error.message);
 
   return ok();
 }

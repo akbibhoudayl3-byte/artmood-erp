@@ -104,38 +104,22 @@ export default function MoneyHubPage() {
     setLoading(true);
 
     const parsedAmount = parseFloat(payment.amount);
-    const { data: paymentData, error: payErr } = await supabase.from('payments').insert({
-      amount: parsedAmount,
-      project_id: payment.project_id,
-      payment_type: payment.payment_type,
-      payment_method: payment.payment_method,
-      notes: payment.notes || null,
-      received_by: profile?.id,
-    }).select('id').single();
+
+    // Atomic: insert payment + update project paid_amount in one SQL transaction
+    const { data: paymentData, error: payErr } = await supabase.rpc('record_payment_atomic', {
+      p_project_id:  payment.project_id,
+      p_amount:      parsedAmount,
+      p_method:      payment.payment_method,
+      p_type:        payment.payment_type,
+      p_reference:   null,
+      p_notes:       payment.notes || null,
+      p_received_by: profile?.id || null,
+    });
 
     if (payErr) {
       alert('Error: ' + payErr.message);
       setLoading(false);
       return;
-    }
-
-    // Update project paid_amount
-    const { data: project } = await supabase
-      .from('projects')
-      .select('paid_amount, total_amount')
-      .eq('id', payment.project_id)
-      .single();
-
-    if (project) {
-      const newPaid = (project.paid_amount || 0) + parsedAmount;
-      const pct = project.total_amount > 0 ? newPaid / project.total_amount : 0;
-      await supabase.from('projects').update({
-        paid_amount: newPaid,
-        deposit_paid: pct >= 0.5,
-        pre_install_paid: pct >= 0.9,
-        final_paid: pct >= 1.0,
-        updated_at: new Date().toISOString(),
-      }).eq('id', payment.project_id);
     }
 
     // Create ledger entry
@@ -147,7 +131,7 @@ export default function MoneyHubPage() {
       description: payment.notes || 'Payment received',
       project_id: payment.project_id,
       source_module: 'money-hub',
-      source_id: paymentData?.id,
+      source_id: paymentData?.payment_id,
       payment_method: payment.payment_method,
       created_by: profile?.id,
     });

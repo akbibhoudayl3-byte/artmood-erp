@@ -10,6 +10,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
   lost: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500' },
   // Projects
   measurements: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' },
+  measurements_confirmed: { bg: 'bg-cyan-50', text: 'text-cyan-700', dot: 'bg-cyan-500' },
   design: { bg: 'bg-violet-50', text: 'text-violet-700', dot: 'bg-violet-500' },
   client_validation: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
   production: { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-500' },

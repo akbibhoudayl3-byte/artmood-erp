@@ -8,7 +8,7 @@ import type { Payment } from './finance';
 export type LeadStatus = 'new' | 'contacted' | 'visit_scheduled' | 'quote_sent' | 'won' | 'lost';
 export type LeadSource = 'instagram' | 'facebook' | 'google' | 'architect' | 'referral' | 'walk_in' | 'website' | 'other';
 
-export type ProjectStatus = 'measurements' | 'design' | 'client_validation' | 'production' | 'installation' | 'delivered' | 'cancelled';
+export type ProjectStatus = 'measurements' | 'measurements_confirmed' | 'design' | 'client_validation' | 'production' | 'installation' | 'delivered' | 'cancelled';
 export type ProjectType = 'kitchen' | 'dressing' | 'furniture' | 'other';
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 

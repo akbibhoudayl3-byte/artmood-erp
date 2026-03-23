@@ -372,47 +372,41 @@ export default function ProjectProductionPage() {
     if (!selectedOrder || bomSuggestions.length === 0) return;
     setImportingBom(true);
 
-    // Track running reserved_quantity per item within this batch to avoid stale reads
-    // when the same stock item appears multiple times in the BOM.
-    const reservedAccumulator: Record<string, number> = {};
-
-    for (const sug of bomSuggestions) {
-      if (!sug.stockItemId) continue;
-      const mat = stockOptions.find(s => s.id === sug.stockItemId);
-      if (!mat) continue;
-
-      // Use accumulator to get correct current reserved total for this item
-      const currentReserved = reservedAccumulator[sug.stockItemId] ?? mat.reserved_quantity;
-      const newReserved = currentReserved + sug.sheets_needed;
-      reservedAccumulator[sug.stockItemId] = newReserved;
-
-      // Reserve stock
-      await supabase
-        .from('stock_items')
-        .update({ reserved_quantity: newReserved })
-        .eq('id', sug.stockItemId);
-
-      // Create a reserve stock movement for audit trail
-      await supabase.from('stock_movements').insert({
+    // Build items array for atomic RPC
+    const rpcItems = bomSuggestions
+      .filter(sug => sug.stockItemId)
+      .map(sug => ({
         stock_item_id: sug.stockItemId,
-        movement_type: 'reserve',
-        quantity: 0,
-        reference_type: 'production_order',
-        reference_id: selectedOrder.id,
-        project_id: id,
-        notes: `BOM réservation: ${sug.sheets_needed} ${sug.unit} ${mat.name} | Ordre: ${selectedOrder.name || ''}`,
-        created_by: profile?.id,
-      });
-
-      // Create requirement
-      await supabase.from('production_material_requirements').insert({
-        production_order_id: selectedOrder.id,
-        material_id: sug.stockItemId,
-        planned_qty: sug.sheets_needed,
+        sheets_needed: sug.sheets_needed,
         unit: sug.unit,
-        status: 'reserved',
-        notes: `BOM: ${sug.material} — ${sug.area_m2 > 0 ? sug.area_m2.toFixed(2) + ' m²' : sug.sheets_needed + ' ' + sug.unit}`,
-      });
+        material_name: sug.material,
+        area_m2: sug.area_m2,
+      }));
+
+    if (rpcItems.length === 0) {
+      setImportingBom(false);
+      return;
+    }
+
+    // Atomic: all reservations + requirements + audit movements in one SQL transaction
+    const { error: rpcErr } = await supabase.rpc('import_bom_requirements_atomic', {
+      p_production_order_id: selectedOrder.id,
+      p_project_id: id,
+      p_worker_id: profile?.id || null,
+      p_order_name: selectedOrder.name || null,
+      p_items: rpcItems,
+    });
+
+    if (rpcErr) {
+      if (rpcErr.message.includes('Insufficient stock')) {
+        alert(`❌ Stock insuffisant — réservation annulée.\n\n${rpcErr.message}`);
+      } else if (rpcErr.message.includes('Not authorized')) {
+        alert('❌ Non autorisé pour cette opération.');
+      } else {
+        alert('Erreur réservation: ' + rpcErr.message);
+      }
+      setImportingBom(false);
+      return;
     }
 
     await loadRequirements(selectedOrder.id);
@@ -429,104 +423,34 @@ export default function ProjectProductionPage() {
 
     setConfirming(true);
 
-    // 1. Check stock won't go negative (used - waste = net consumption)
+    // Atomic: all steps in one SQL transaction (stock movement, usage, waste, requirement, reservation)
     const mat = req.material;
-    const netConsumption = usedQty; // total consumed (waste is part of used)
+    const { error: rpcErr } = await supabase.rpc('record_production_usage_atomic', {
+      p_production_order_id: selectedOrder?.id,
+      p_requirement_id:     req.id,
+      p_material_id:        req.material_id,
+      p_project_id:         id,
+      p_used_qty:           usedQty,
+      p_waste_qty:          wasteQty,
+      p_unit:               req.unit,
+      p_stage:              confirmStage,
+      p_worker_id:          profile?.id || null,
+      p_notes:              confirmNotes || null,
+      p_order_name:         selectedOrder?.name || null,
+      p_material_name:      mat?.name || null,
+      p_planned_qty:        mat ? req.planned_qty : null,
+    });
 
-    if (mat && netConsumption > mat.current_quantity) {
-      alert(`❌ Stock insuffisant!\nDisponible: ${mat.current_quantity} ${mat.unit}\nConsommé: ${netConsumption} ${mat.unit}`);
-      setConfirming(false);
-      return;
-    }
-
-    // 2. Insert stock_movement (negative quantity → triggers deduction)
-    const { data: movement, error: movErr } = await supabase
-      .from('stock_movements')
-      .insert({
-        stock_item_id: req.material_id,
-        movement_type: 'production_out',
-        quantity: -netConsumption, // negative triggers stock deduction via trigger
-        reference_type: 'production_order',
-        reference_id: selectedOrder?.id,
-        project_id: id,
-        notes: `Production: ${selectedOrder?.name || ''} | Stage: ${confirmStage}${confirmNotes ? ' | ' + confirmNotes : ''}`,
-        created_by: profile?.id,
-      })
-      .select('id')
-      .single();
-
-    if (movErr) {
-      // Check if it's a negative stock error from trigger
-      if (movErr.message.includes('negative')) {
-        alert('❌ Stock insuffisant — opération annulée');
+    if (rpcErr) {
+      if (rpcErr.message.includes('Insufficient stock')) {
+        alert(`❌ Stock insuffisant!\n${rpcErr.message}`);
+      } else if (rpcErr.message.includes('Not authorized')) {
+        alert('❌ Non autorisé pour cette opération.');
       } else {
-        alert('Erreur mouvement stock: ' + movErr.message);
+        alert('Erreur: ' + rpcErr.message);
       }
       setConfirming(false);
       return;
-    }
-
-    // 3. Create usage record
-    const { error: useErr } = await supabase
-      .from('production_material_usage')
-      .insert({
-        production_order_id: selectedOrder?.id,
-        requirement_id: req.id,
-        material_id: req.material_id,
-        used_qty: usedQty,
-        waste_qty: wasteQty,
-        unit: req.unit,
-        stage: confirmStage,
-        worker_id: profile?.id,
-        movement_id: movement?.id || null,
-        notes: confirmNotes || null,
-      });
-
-    if (useErr) {
-      alert('Erreur usage: ' + useErr.message);
-      setConfirming(false);
-      return;
-    }
-
-    // 3b. Create waste_record for physical waste tracking (feeds into v_project_material_waste offcut_agg)
-    if (wasteQty > 0 && req.material) {
-      await supabase.from('waste_records').insert({
-        sheet_id: null,
-        production_order_id: selectedOrder?.id,
-        project_id: id,
-        material: req.material.name,
-        length_mm: 1000,
-        width_mm: Math.round(wasteQty * 1000),
-        is_reusable: false,
-        notes: `Production waste: ${wasteQty} ${req.unit} | Order: ${selectedOrder?.name || ''} | Stage: ${confirmStage}`,
-        created_by: profile?.id,
-      });
-    }
-
-    // 3c. Audit marker for waste in stock_movements (no additional deduction — already in production_out)
-    if (wasteQty > 0) {
-      await supabase.from('stock_movements').insert({
-        stock_item_id: req.material_id,
-        movement_type: 'production_waste',
-        quantity: 0,
-        reference_type: 'production_order',
-        reference_id: selectedOrder?.id,
-        project_id: id,
-        notes: `Waste: ${wasteQty} ${req.unit} from ${req.material?.name || 'unknown'} | Stage: ${confirmStage}`,
-        created_by: profile?.id,
-      });
-    }
-
-    // 4. Update requirement status + release reservation
-    if (mat) {
-      await Promise.all([
-        supabase.from('production_material_requirements')
-          .update({ status: 'consumed' })
-          .eq('id', req.id),
-        supabase.from('stock_items')
-          .update({ reserved_quantity: Math.max(0, mat.reserved_quantity - req.planned_qty) })
-          .eq('id', req.material_id),
-      ]);
     }
 
     await loadRequirements(selectedOrder!.id);

@@ -4,11 +4,8 @@ import { requireRole } from '@/lib/auth/server';
 import { writeAuditLog } from '@/lib/security/audit';
 
 export async function POST(req: NextRequest) {
-  // Any authenticated role can write an audit log
-  const auth = await requireRole([
-    'ceo', 'commercial_manager', 'designer', 'workshop_manager',
-    'workshop_worker', 'installer', 'hr_manager', 'community_manager',
-  ]);
+  // Only trusted admin roles can write audit log entries directly
+  const auth = await requireRole(['ceo', 'hr_manager']);
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => null);

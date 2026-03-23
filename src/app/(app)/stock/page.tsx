@@ -27,9 +27,9 @@ import {
   addStockItem,
   updateStockItem,
   deleteStockItem,
-  recordStockMovement,
   loadStockMovements,
 } from '@/lib/services/stock.service';
+import { recordStockMovement } from '@/lib/services/index';
 
 const PAGE_SIZE = 50;
 
@@ -260,8 +260,9 @@ export default function StockPage() {
 
     const res = await recordStockMovement({
       stock_item_id: selectedItem.id,
-      type: movType,
+      direction: movType as 'in' | 'out' | 'adjust',
       quantity: qty,
+      target_quantity: movType === 'adjust' ? qty : undefined,
       notes: movNotes.trim() || undefined,
       created_by: profile?.id || '',
     });

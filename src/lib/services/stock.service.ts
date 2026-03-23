@@ -186,82 +186,8 @@ export async function deleteStockItem(id: string): Promise<ServiceResult> {
   return ok();
 }
 
-/**
- * Record a stock movement (in / out / adjust).
- * The DB trigger `update_stock_quantity` handles updating current_quantity.
- */
-export async function recordStockMovement(data: {
-  stock_item_id: string;
-  type: 'in' | 'out' | 'adjust';
-  quantity: number;
-  notes?: string;
-  project_id?: string;
-  created_by: string;
-}): Promise<ServiceResult> {
-  if (!data.stock_item_id) return fail('Stock item ID is required.');
-  if (data.type !== 'adjust' && data.quantity <= 0)
-    return fail('Quantity must be greater than zero.');
-
-  // Load current quantity for adjustment calculation and stock check
-  const { data: item, error: itemErr } = await supabase()
-    .from('stock_items')
-    .select('current_quantity, name, unit')
-    .eq('id', data.stock_item_id)
-    .single();
-
-  if (itemErr || !item)
-    return fail('Stock item not found: ' + (itemErr?.message || ''));
-
-  let signedQty: number;
-  let dbMovType: string;
-
-  switch (data.type) {
-    case 'in':
-      signedQty = data.quantity;
-      dbMovType = 'in';
-      break;
-    case 'out':
-      signedQty = -data.quantity;
-      dbMovType = 'out';
-      if (item.current_quantity + signedQty < 0) {
-        return fail(
-          `Insufficient stock for ${item.name}. Available: ${item.current_quantity} ${item.unit}, requested: ${data.quantity}.`,
-        );
-      }
-      break;
-    case 'adjust':
-      signedQty = data.quantity - item.current_quantity;
-      dbMovType = 'adjustment';
-      break;
-    default:
-      return fail('Invalid movement type.');
-  }
-
-  const { error } = await supabase()
-    .from('stock_movements')
-    .insert({
-      stock_item_id: data.stock_item_id,
-      movement_type: dbMovType,
-      quantity: signedQty,
-      notes: data.notes?.trim() || null,
-      created_by: data.created_by,
-      project_id: data.project_id || null,
-    });
-
-  if (error) {
-    if (
-      error.message?.includes('negative') ||
-      error.message?.includes('cannot go')
-    ) {
-      return fail(
-        `Insufficient stock. Available: ${item.current_quantity} ${item.unit}.`,
-      );
-    }
-    return fail('Stock movement error: ' + error.message);
-  }
-
-  return ok();
-}
+// recordStockMovement has been consolidated into src/lib/services/index.ts
+// Import from there: import { recordStockMovement } from '@/lib/services/index';
 
 /**
  * Load movement history for a specific stock item.

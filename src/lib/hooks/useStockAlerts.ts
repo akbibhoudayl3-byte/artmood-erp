@@ -133,7 +133,6 @@ export interface NotificationItem {
   body: string | null;
   is_read: boolean;
   created_at: string;
-  link: string | null;
 }
 
 export function useNotifications(userId: string | null) {
@@ -148,7 +147,7 @@ export function useNotifications(userId: string | null) {
     try {
       const { data } = await supabase
         .from('notifications')
-        .select('id, type, title, body, is_read, created_at, link')
+        .select('id, type, title, body, is_read, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(30);

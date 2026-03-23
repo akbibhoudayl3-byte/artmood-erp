@@ -38,13 +38,14 @@ import type { ProjectStatus }   from '@/types/database';
 // ── Transition Map ────────────────────────────────────────────────────────────
 
 export const VALID_TRANSITIONS: Record<ProjectStatus, readonly ProjectStatus[]> = {
-  measurements:      ['design', 'cancelled'],
-  design:            ['client_validation', 'measurements', 'cancelled'],
-  client_validation: ['production', 'design', 'cancelled'],
-  production:        ['installation', 'cancelled'],
-  installation:      ['delivered', 'cancelled'],
-  delivered:         [],
-  cancelled:         [],
+  measurements:              ['measurements_confirmed', 'design', 'cancelled'],
+  measurements_confirmed:    ['design', 'cancelled'],
+  design:                    ['client_validation', 'measurements', 'cancelled'],
+  client_validation:         ['production', 'design', 'cancelled'],
+  production:                ['installation', 'cancelled'],
+  installation:              ['delivered', 'cancelled'],
+  delivered:                 [],
+  cancelled:                 [],
 } as const;
 
 // ── Result Type ───────────────────────────────────────────────────────────────
@@ -211,13 +212,14 @@ export function getAvailableTransitions(from: ProjectStatus): readonly ProjectSt
  */
 export function getStatusLabel(status: ProjectStatus): string {
   const labels: Record<ProjectStatus, string> = {
-    measurements:      'Measurements',
-    design:            'Design',
-    client_validation: 'Client Validation',
-    production:        'Production',
-    installation:      'Installation',
-    delivered:         'Delivered',
-    cancelled:         'Cancelled',
+    measurements:              'Measurements',
+    measurements_confirmed:    'Measurements Confirmed',
+    design:                    'Design',
+    client_validation:         'Client Validation',
+    production:                'Production',
+    installation:              'Installation',
+    delivered:                 'Delivered',
+    cancelled:                 'Cancelled',
   };
   return labels[status] ?? status;
 }

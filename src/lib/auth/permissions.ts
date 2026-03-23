@@ -64,6 +64,15 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   // Calendar — most roles
   '/calendar':           ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'hr_manager', 'installer'],
 
+  // Work time — all employees that clock in/out
+  '/work-time':          ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
+
+  // Catalog — module library
+  '/catalog':            ['ceo', 'designer', 'workshop_manager'],
+
+  // Factory intelligence
+  '/factory':            ['ceo', 'commercial_manager', 'workshop_manager'],
+
   // Dashboard — everyone
   '/dashboard':          ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
 
@@ -80,8 +89,8 @@ export const API_ROLES: Record<string, UserRole[]> = {
   '/api/admin':                        ['ceo'],
   '/api/guardian':                     ['ceo'],
 
-  // Audit log — CEO + HR
-  '/api/audit':                        ['ceo', 'hr_manager', 'workshop_manager', 'commercial_manager', 'designer', 'installer', 'workshop_worker', 'community_manager'],
+  // Audit log — CEO + HR only (server-side writeAuditLog bypasses this endpoint)
+  '/api/audit':                        ['ceo', 'hr_manager'],
 
   // Auth callback — public (handled separately, but listed for completeness)
   '/api/auth':                         ['ceo', 'commercial_manager', 'designer', 'workshop_manager', 'workshop_worker', 'installer', 'hr_manager', 'community_manager'],
@@ -147,7 +156,7 @@ export function canAccess(role: UserRole, pathname: string): boolean {
     .filter(([prefix]) => pathname === prefix || pathname.startsWith(prefix + '/'))
     .sort((a, b) => b[0].length - a[0].length)[0];
 
-  if (!match) return true; // No rule = allow (auth already required by middleware)
+  if (!match) return false; // DENY by default — unmatched routes are blocked
   return match[1].includes(role);
 }
 

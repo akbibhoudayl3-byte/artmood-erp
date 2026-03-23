@@ -27,11 +27,15 @@ import type { ProjectStatus, UserRole } from '@/types/database';
 
 // ── Per-transition role restrictions ──────────────────────────────────────────
 // Some transitions require specific roles beyond the base guard.
-const TRANSITION_ROLES: Partial<Record<ProjectStatus, readonly UserRole[]>> = {
-  production:   ['ceo', 'workshop_manager', 'commercial_manager'],
-  installation: ['ceo', 'workshop_manager'],
-  delivered:    ['ceo', 'commercial_manager'],
-  cancelled:    ['ceo', 'commercial_manager'],
+const TRANSITION_ROLES: Record<ProjectStatus, readonly UserRole[]> = {
+  measurements:              ['ceo', 'commercial_manager', 'designer'],
+  measurements_confirmed:    ['ceo', 'commercial_manager', 'designer'],
+  design:                    ['ceo', 'commercial_manager', 'designer'],
+  client_validation:         ['ceo', 'commercial_manager', 'designer'],
+  production:                ['ceo', 'workshop_manager', 'commercial_manager'],
+  installation:              ['ceo', 'workshop_manager'],
+  delivered:                 ['ceo', 'commercial_manager'],
+  cancelled:                 ['ceo', 'commercial_manager'],
 };
 
 export async function POST(
@@ -96,7 +100,16 @@ export async function POST(
 
   // ── Per-transition role check ─────────────────────────────────────────────
   const requiredRoles = TRANSITION_ROLES[toStatus];
-  if (requiredRoles && !requiredRoles.includes(ctx.role)) {
+  if (!requiredRoles) {
+    return NextResponse.json(
+      {
+        error: 'Transition not allowed',
+        message: `No role permissions defined for transitioning to "${toStatus}". Contact admin.`,
+      },
+      { status: 403 },
+    );
+  }
+  if (!requiredRoles.includes(ctx.role)) {
     return NextResponse.json(
       {
         error: 'Forbidden',

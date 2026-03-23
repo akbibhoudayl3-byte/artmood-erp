@@ -170,27 +170,22 @@ export async function createPayment(
     }
   }
 
-  const { data: payment, error: insertErr } = await supabase()
-    .from('payments')
-    .insert({
-      project_id: data.project_id,
-      amount: data.amount,
-      payment_type: data.payment_type,
-      payment_method: data.payment_method,
-      received_at: new Date(data.received_at).toISOString(),
-      reference_number: data.reference_number || null,
-      notes: data.notes || null,
-      received_by: data.received_by || null,
-    })
-    .select('id')
-    .single();
+  // Atomic: insert payment + update project paid_amount in one SQL transaction
+  const { data: result, error: rpcErr } = await supabase()
+    .rpc('record_payment_atomic', {
+      p_project_id:  data.project_id,
+      p_amount:      data.amount,
+      p_method:      data.payment_method,
+      p_type:        data.payment_type,
+      p_reference:   data.reference_number || null,
+      p_notes:       data.notes || null,
+      p_received_by: data.received_by || null,
+      p_received_at: new Date(data.received_at).toISOString(),
+    });
 
-  if (insertErr) return fail('Failed to record payment: ' + insertErr.message);
+  if (rpcErr) return fail('Failed to record payment: ' + rpcErr.message);
 
-  // Sync project paid_amount
-  await syncProjectPaidAmountAdd(data.project_id, data.amount);
-
-  return ok({ id: payment.id });
+  return ok({ id: result.payment_id });
 }
 
 /**
