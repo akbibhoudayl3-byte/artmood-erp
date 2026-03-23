@@ -191,20 +191,44 @@ export async function POST(
       : `Project transition: ${fromStatus} → ${toStatus}${notes ? `. Notes: ${notes}` : ''}`,
   });
 
-  // ── Timeline event (project_events) — enriched for reopens ───────────────
-  // The DB trigger creates a generic "Project moved from X to Y" entry.
-  // For reopens (and any transition with notes), insert a detailed entry
-  // so the reason is visible in the Chronologie UI.
+  // ── Timeline event: enrich the trigger's row for reopens ─────────────────
+  // The DB trigger (log_project_status_change) creates a generic status_change
+  // row. For reopens, we UPDATE that row to add the reason + metadata instead
+  // of inserting a duplicate. We find it by matching project_id + old/new status
+  // within the last 5 seconds.
   if (isReopen && notes) {
-    await ctx.supabase.from('project_events').insert({
-      project_id:  projectId,
-      user_id:     ctx.userId,
-      event_type:  'measurements_reopened',
-      old_value:   fromStatus,
-      new_value:   toStatus,
-      description: `Mesures réouvertes: ${fromStatus} → ${toStatus}. Raison: ${notes}`,
-      metadata:    { reopen: true, reason: notes },
-    });
+    const { data: triggerRow } = await ctx.supabase
+      .from('project_events')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('event_type', 'status_change')
+      .eq('old_value', fromStatus)
+      .eq('new_value', toStatus)
+      .gte('created_at', new Date(Date.now() - 5000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (triggerRow) {
+      // Enrich the trigger's row
+      await ctx.supabase.from('project_events').update({
+        event_type:  'measurements_reopened',
+        user_id:     ctx.userId,
+        description: `Mesures réouvertes: ${fromStatus} → ${toStatus}. Raison: ${notes}`,
+        metadata:    { reopen: true, reason: notes },
+      }).eq('id', triggerRow.id);
+    } else {
+      // Trigger row not found (shouldn't happen) — insert as fallback
+      await ctx.supabase.from('project_events').insert({
+        project_id:  projectId,
+        user_id:     ctx.userId,
+        event_type:  'measurements_reopened',
+        old_value:   fromStatus,
+        new_value:   toStatus,
+        description: `Mesures réouvertes: ${fromStatus} → ${toStatus}. Raison: ${notes}`,
+        metadata:    { reopen: true, reason: notes },
+      });
+    }
   }
 
   return NextResponse.json({
