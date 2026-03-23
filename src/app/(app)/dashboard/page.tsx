@@ -28,7 +28,7 @@ import { useLocale } from '@/lib/hooks/useLocale';
 import {
   Users, FolderKanban, Factory, Wallet, AlertTriangle, Calendar,
   Wrench, TrendingUp, TrendingDown, DollarSign, Clock, CheckCircle,
-  RefreshCw, Activity, CreditCard, UserPlus, Package
+  RefreshCw, Activity, CreditCard, UserPlus, Package, Banknote
 } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 
@@ -71,6 +71,7 @@ export default function DashboardPage() {
   const [secondsAgo, setSecondsAgo] = useState(0);
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expense: number }[]>([]);
   const [brainStats, setBrainStats] = useState({ lossCount: 0, criticalCount: 0, warnCount: 0, wasteAlerts: 0 });
+  const [pendingFinance, setPendingFinance] = useState({ chequesToDeposit: 0, chequesToDepositAmount: 0, chequesInClearing: 0, chequesInClearingAmount: 0, transfersPending: 0, transfersPendingAmount: 0 });
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
 
   // Tick "X seconds ago" counter
@@ -239,6 +240,28 @@ export default function DashboardPage() {
           const months = Object.keys(grouped).sort();
           setMonthlyData(months.map(m => ({ month: m, ...grouped[m] })));
         }
+      }
+
+      // ── PENDING FINANCIAL ACTIONS (CEO + commercial_manager) ─────────────────
+      if (canViewFinance) {
+        const [
+          { data: chequesToDeposit },
+          { data: chequesInClearing },
+          { data: transfersPending },
+        ] = await Promise.all([
+          supabase.from('cheques').select('amount').eq('status', 'pending').eq('type', 'received'),
+          supabase.from('cheques').select('amount').eq('status', 'deposited').eq('type', 'received'),
+          supabase.from('payments').select('amount').eq('payment_status', 'pending_proof'),
+        ]);
+
+        setPendingFinance({
+          chequesToDeposit: chequesToDeposit?.length || 0,
+          chequesToDepositAmount: (chequesToDeposit || []).reduce((s, c) => s + Number(c.amount), 0),
+          chequesInClearing: chequesInClearing?.length || 0,
+          chequesInClearingAmount: (chequesInClearing || []).reduce((s, c) => s + Number(c.amount), 0),
+          transfersPending: transfersPending?.length || 0,
+          transfersPendingAmount: (transfersPending || []).reduce((s, p) => s + Number(p.amount), 0),
+        });
       }
 
       setLastUpdated(new Date());
@@ -477,6 +500,55 @@ export default function DashboardPage() {
               </Card>
             )}
           </>
+        )}
+
+        {/* Pending Financial Actions */}
+        {canViewFinance && (pendingFinance.chequesToDeposit > 0 || pendingFinance.chequesInClearing > 0 || pendingFinance.transfersPending > 0) && (
+          <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
+            <CardHeader className="pb-2">
+              <h3 className="font-semibold text-amber-800 text-sm flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-600" />
+                Actions financières en attente
+              </h3>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {pendingFinance.chequesToDeposit > 0 && (
+                  <button onClick={() => router.push('/finance/cheques')} className="flex items-center gap-3 p-3 bg-white/70 rounded-xl hover:bg-white transition-colors text-left">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                      <Banknote size={16} className="text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-blue-800">{pendingFinance.chequesToDeposit} chèque(s) à déposer</p>
+                      <p className="text-[11px] text-blue-600">{pendingFinance.chequesToDepositAmount.toLocaleString()} MAD</p>
+                    </div>
+                  </button>
+                )}
+                {pendingFinance.chequesInClearing > 0 && (
+                  <button onClick={() => router.push('/finance/cheques')} className="flex items-center gap-3 p-3 bg-white/70 rounded-xl hover:bg-white transition-colors text-left">
+                    <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
+                      <Clock size={16} className="text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800">{pendingFinance.chequesInClearing} chèque(s) en compensation</p>
+                      <p className="text-[11px] text-amber-600">{pendingFinance.chequesInClearingAmount.toLocaleString()} MAD</p>
+                    </div>
+                  </button>
+                )}
+                {pendingFinance.transfersPending > 0 && (
+                  <button onClick={() => router.push('/finance/payments')} className="flex items-center gap-3 p-3 bg-white/70 rounded-xl hover:bg-white transition-colors text-left">
+                    <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center shrink-0">
+                      <CreditCard size={16} className="text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-orange-800">{pendingFinance.transfersPending} virement(s) à confirmer</p>
+                      <p className="text-[11px] text-orange-600">{pendingFinance.transfersPendingAmount.toLocaleString()} MAD</p>
+                    </div>
+                  </button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Quick metrics row */}

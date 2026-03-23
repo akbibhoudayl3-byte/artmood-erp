@@ -417,20 +417,33 @@ export default function ProjectDetailPage() {
       // ── SOFT BLOCK: business warnings — CEO can override ───────────────
       if (data.blockType === 'soft' && data.overridable) {
         const warnings = (data.warnings || []).map((w: string) => `• ${w}`).join('\n');
+        const confirmed = data.confirmed_amount != null ? Number(data.confirmed_amount).toLocaleString() : '?';
+        const required = data.required_amount != null ? Number(data.required_amount).toLocaleString() : '?';
+        const shortage = data.shortage != null ? Number(data.shortage).toLocaleString() : '?';
 
         if (profile?.role !== 'ceo') {
-          setErrorMsg(`Cannot proceed. Only CEO can override:\n${warnings}`);
+          setErrorMsg(
+            `Transition bloquée:\n${warnings}\n\n` +
+            `Confirmé: ${confirmed} MAD | Requis: ${required} MAD | Manque: ${shortage} MAD\n\n` +
+            `Seul le CEO peut approuver cette dérogation.`
+          );
           return;
         }
 
-        // CEO confirm dialog for override
-        confirm.open({
-          title: 'Business Rule Warning',
-          message: `Issues found:\n${warnings}\n\nProceed with CEO override?`,
-          onConfirm: async () => {
-            await handleStatusChange(newStatus, true);
-          },
-        });
+        // CEO override: require mandatory reason
+        const reason = prompt(
+          `⚠️ Dérogation CEO requise\n\n` +
+          `${warnings}\n\n` +
+          `Confirmé: ${confirmed} MAD\nRequis: ${required} MAD\nManque: ${shortage} MAD\n\n` +
+          `Entrez la raison de la dérogation (obligatoire) :`
+        );
+
+        if (!reason || reason.trim().length === 0) {
+          setErrorMsg('Dérogation annulée. Une raison est obligatoire.');
+          return;
+        }
+
+        await handleStatusChange(newStatus, true, reason.trim());
         return;
       }
 
