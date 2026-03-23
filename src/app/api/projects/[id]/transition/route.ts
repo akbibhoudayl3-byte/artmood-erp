@@ -131,7 +131,7 @@ export async function POST(
     supabase:  ctx.supabase,
     override,
     userRole:  ctx.role,
-    notes,
+    notes:     notes || '',
   });
 
   // ── DEBUG: structured transition decision log ──────────────────────────
