@@ -192,6 +192,45 @@ interface PartRow {
   edge_bottom: string | null;
   edge_left: string | null;
   edge_right: string | null;
+  project_module_id: string | null;
+}
+
+// ── Per-module-category dimension limits ────────────────────────────────────
+// These override the global thresholds when a part belongs to a known module.
+// Heights/widths are the maximum physically possible for that cabinet type,
+// accounting for sheet dimensions + factory capability.
+
+interface CategoryLimits {
+  max_width_mm: number;
+  max_height_mm: number;
+}
+
+const MODULE_CATEGORY_LIMITS: Record<string, CategoryLimits> = {
+  base_cabinet:  { max_width_mm: 1200, max_height_mm: 900  },
+  wall_cabinet:  { max_width_mm: 1200, max_height_mm: 1200 },
+  tall_cabinet:  { max_width_mm: 1200, max_height_mm: 2400 },
+  wardrobe:      { max_width_mm: 1200, max_height_mm: 2400 },
+  drawer_unit:   { max_width_mm: 1200, max_height_mm: 900  },
+};
+
+/**
+ * Infer module category from part name when project_module_id is NULL.
+ * Orphan parts (imported manually, legacy BOM) have naming conventions:
+ *   COL_*        → tall_cabinet
+ *   B600_*, B800_*, BASE_* → base_cabinet
+ *   H_*, HAUT_*, WALL_*   → wall_cabinet
+ *   DRESS_*, WARD_*       → wardrobe
+ */
+function inferCategoryFromPartName(name: string | null): string | null {
+  if (!name) return null;
+  const upper = name.toUpperCase();
+  if (upper.startsWith('COL'))                                return 'tall_cabinet';
+  if (upper.startsWith('PANTRY') || upper.startsWith('TALL')) return 'tall_cabinet';
+  if (/^B\d/.test(upper) || upper.startsWith('BASE'))        return 'base_cabinet';
+  if (upper.startsWith('H_') || upper.startsWith('HAUT') || upper.startsWith('WALL')) return 'wall_cabinet';
+  if (upper.startsWith('DRESS') || upper.startsWith('WARD')) return 'wardrobe';
+  if (upper.includes('COLONNE'))                              return 'tall_cabinet';
+  return null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -208,15 +247,29 @@ export async function validateProjectParts(
 
   const sb = supabase();
 
-  // Parallel fetch: parts, thresholds, material catalog
-  const [partsRes, thresholds, catalog] = await Promise.all([
+  // Parallel fetch: parts, thresholds, material catalog, module categories
+  const [partsRes, thresholds, catalog, moduleCatsRes] = await Promise.all([
     sb
       .from('project_parts')
-      .select('id, part_name, material_type, width_mm, height_mm, quantity, grain_direction, edge_top, edge_bottom, edge_left, edge_right')
+      .select('id, part_name, material_type, width_mm, height_mm, quantity, grain_direction, edge_top, edge_bottom, edge_left, edge_right, project_module_id')
       .eq('project_id', projectId),
     loadThresholds(),
     loadMaterialCatalog(),
+    // Resolve module category for each project_module → module.category
+    sb
+      .from('project_modules')
+      .select('id, module:module_id(category)')
+      .eq('project_id', projectId),
   ]);
+
+  // Build lookup: project_module_id → module category
+  const moduleCategoryMap = new Map<string, string>();
+  if (moduleCatsRes.data) {
+    for (const pm of moduleCatsRes.data) {
+      const cat = (pm.module as any)?.category;
+      if (cat) moduleCategoryMap.set(pm.id, cat);
+    }
+  }
 
   if (partsRes.error) {
     return fail(`Erreur lors du chargement des pièces : ${partsRes.error.message}`);
@@ -263,6 +316,16 @@ export async function validateProjectParts(
       });
     }
 
+    // ── Resolve per-module-category dimension limits ──
+    // Priority: module FK → name-based inference → global fallback.
+    const fkCategory = part.project_module_id
+      ? moduleCategoryMap.get(part.project_module_id) ?? null
+      : null;
+    const partCategory = fkCategory ?? inferCategoryFromPartName(part.part_name);
+    const catLimits = partCategory ? MODULE_CATEGORY_LIMITS[partCategory] : null;
+    const effectiveMaxWidth  = catLimits?.max_width_mm  ?? thresholds.max_part_width_mm;
+    const effectiveMaxHeight = catLimits?.max_height_mm ?? thresholds.max_part_height_mm;
+
     // ── width_mm ──
     if (part.width_mm == null || part.width_mm <= 0) {
       errors.push({
@@ -278,16 +341,16 @@ export async function validateProjectParts(
           part_id: part.id,
           part_name: label,
           field: 'width_mm',
-          message: `Largeur ${part.width_mm} mm inférieure au minimum autorisé (${thresholds.min_part_width_mm} mm).`,
+          message: `Largeur ${part.width_mm} mm inférieure au minimum (${thresholds.min_part_width_mm} mm).`,
           severity: 'warning',
         });
       }
-      if (part.width_mm > thresholds.max_part_width_mm) {
+      if (part.width_mm > effectiveMaxWidth) {
         errors.push({
           part_id: part.id,
           part_name: label,
           field: 'width_mm',
-          message: `Largeur ${part.width_mm} mm dépasse le maximum autorisé (${thresholds.max_part_width_mm} mm).`,
+          message: `Largeur ${part.width_mm} mm dépasse le max${partCategory ? ` (${partCategory}: ${effectiveMaxWidth} mm)` : ` (${effectiveMaxWidth} mm)`}.`,
           severity: 'error',
         });
       }
@@ -308,16 +371,16 @@ export async function validateProjectParts(
           part_id: part.id,
           part_name: label,
           field: 'height_mm',
-          message: `Hauteur ${part.height_mm} mm inférieure au minimum autorisé (${thresholds.min_part_height_mm} mm).`,
+          message: `Hauteur ${part.height_mm} mm inférieure au minimum (${thresholds.min_part_height_mm} mm).`,
           severity: 'warning',
         });
       }
-      if (part.height_mm > thresholds.max_part_height_mm) {
+      if (part.height_mm > effectiveMaxHeight) {
         errors.push({
           part_id: part.id,
           part_name: label,
           field: 'height_mm',
-          message: `Hauteur ${part.height_mm} mm dépasse le maximum autorisé (${thresholds.max_part_height_mm} mm).`,
+          message: `Hauteur ${part.height_mm} mm dépasse le max${partCategory ? ` (${partCategory}: ${effectiveMaxHeight} mm)` : ` (${effectiveMaxHeight} mm)`}.`,
           severity: 'error',
         });
       }

@@ -57,7 +57,7 @@ export async function POST(
   }
 
   // ── Parse request body ────────────────────────────────────────────────────
-  let body: { status?: string; notes?: string };
+  let body: { status?: string; notes?: string; override?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -66,6 +66,7 @@ export async function POST(
 
   const toStatus = body?.status as ProjectStatus | undefined;
   const notes = sanitizeString(body?.notes ?? '', 500);
+  const override = body?.override === true;
 
   if (!toStatus) {
     return NextResponse.json(
@@ -119,15 +120,41 @@ export async function POST(
     );
   }
 
-  // ── FSM Validation (includes async pre-conditions) ────────────────────────
+  // ── FSM Validation (hard blocks + soft blocks) ───────────────────────────
+  // Hard blocks (invalid FSM edge): always rejected, no override possible.
+  // Soft blocks (business warnings): rejected unless override=true AND role=ceo.
   const fsm = await guardProjectTransition({
     from:      fromStatus,
     to:        toStatus,
     projectId,
     project,
     supabase:  ctx.supabase,
+    override,
+    userRole:  ctx.role,
   });
-  if (fsm !== null) return fsm; // returns 422 NextResponse with violation list
+
+  // ── DEBUG: structured transition decision log ──────────────────────────
+  if (fsm !== null) {
+    const debugBody = await fsm.clone().json();
+    console.log('[transition:debug]', JSON.stringify({
+      from: fromStatus,
+      to: toStatus,
+      projectId,
+      override,
+      userRole: ctx.role,
+      decision: debugBody,
+    }));
+    return fsm;
+  }
+
+  console.log('[transition:debug]', JSON.stringify({
+    from: fromStatus,
+    to: toStatus,
+    projectId,
+    override,
+    userRole: ctx.role,
+    decision: { ok: true, blockType: null },
+  }));
 
   // ── Apply the transition ──────────────────────────────────────────────────
   const { data: updated, error: updateErr } = await ctx.supabase

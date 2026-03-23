@@ -300,7 +300,7 @@ export async function updateProjectStatus(
   };
   // production_started_at added by schema_fix_migrate.js
   if (newStatus === 'production') updates.production_started_at = new Date().toISOString();
-  if (newStatus === 'completed') updates.actual_delivery_date = new Date().toISOString();
+  if (newStatus === 'delivered') updates.actual_delivery_date = new Date().toISOString();
 
   const { error } = await supabase()
     .from('projects')

@@ -7,7 +7,7 @@ import { useProjectLoader } from '@/lib/hooks/useProjectLoader';
 import { useProjectPermissions } from '@/lib/hooks/useProjectPermissions';
 import { useFormModal } from '@/lib/hooks/useFormModal';
 import { useConfirmDialog } from '@/lib/hooks/useConfirmDialog';
-import { updateProject, checkProductionReadiness, updateProjectStatus } from '@/lib/services/project.service';
+import { updateProject } from '@/lib/services/project.service';
 import { validateProjectParts } from '@/lib/services/validation-engine.service';
 import { calculateAndStoreCosts, generateAutoQuote } from '@/lib/services/cost-engine.service';
 import Card, { CardHeader, CardContent } from '@/components/ui/Card';
@@ -17,6 +17,7 @@ import FormModal from '@/components/ui/FormModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ErrorBanner from '@/components/ui/ErrorBanner';
 import { PROJECT_STAGES } from '@/lib/constants';
+import { getAvailableTransitions } from '@/lib/integrity/project-fsm-core';
 import type { ProjectStatus } from '@/types/crm';
 import PhotoUpload from '@/components/ui/PhotoUpload';
 import { useLocale } from '@/lib/hooks/useLocale';
@@ -31,11 +32,13 @@ import ProductionTimeline from '@/components/projects/ProductionTimeline';
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   measurements: <Ruler size={16} />,
+  measurements_confirmed: <CheckCircle size={16} />,
   design: <Palette size={16} />,
   client_validation: <CheckCircle size={16} />,
   production: <Factory size={16} />,
   installation: <Truck size={16} />,
-  completed: <CheckCircle size={16} />,
+  delivered: <CheckCircle size={16} />,
+  cancelled: <X size={16} />,
 };
 
 const EDIT_INITIAL = {
@@ -307,60 +310,91 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function handleStatusChange(newStatus: ProjectStatus) {
+  async function handleStatusChange(newStatus: ProjectStatus, override = false) {
     if (!project) return;
+    setErrorMsg(null);
 
-    // Parts validation before production
-    if (newStatus === 'production') {
-      // Step 1: Validate all parts (dimensions, materials, edges)
+    // ── Layer 2: Parts validation before production (HARD BLOCK only) ───────
+    // Checks structurally impossible parts: zero dims, missing material,
+    // exceeds per-module-type max dimensions.
+    // Only on first attempt — skipped on CEO override retry.
+    if (newStatus === 'production' && !override) {
       const validation = await validateProjectParts(id as string);
-      if (validation.success && validation.data && !validation.data.is_valid) {
-        const partErrors = validation.data.errors.slice(0, 5).map(e => `• ${e.message}`).join('\n');
-        const totalErrors = validation.data.errors.length;
-        setErrorMsg(`Validation échouée (${totalErrors} erreurs):\n${partErrors}${totalErrors > 5 ? '\n• ...' : ''}\n\nCorrigez les pièces avant de lancer la production.`);
+
+      if (validation.success && validation.data) {
+        const criticalErrors = validation.data.errors;
+
+        // HARD BLOCK: structurally impossible — cannot override
+        if (criticalErrors.length > 0) {
+          const msgs = criticalErrors.slice(0, 5).map(e => `• ${e.message}`).join('\n');
+          const total = criticalErrors.length;
+          setErrorMsg(
+            `Validation échouée (${total} erreur(s) critique(s)):\n${msgs}` +
+            `${total > 5 ? '\n• ...' : ''}` +
+            `\n\nCorrigez les pièces avant de lancer la production.`
+          );
+          return;
+        }
+        // Soft warnings (below min threshold) are informational — do not block.
+      }
+      // If validation.success is false (no parts, DB error) — proceed to API.
+    }
+
+    // ── Layer 1 + 3: ALL transitions go through the API ─────────────────────
+    // Layer 1: FSM edge check → HARD BLOCK
+    // Layer 3: Business rules (deposit, design, total) → SOFT BLOCK
+    try {
+      const res = await fetch(`/api/projects/${id}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, override }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.ok) {
+        setSuccessMsg(`Status updated to ${newStatus.replace(/_/g, ' ')}`);
+        reload();
         return;
       }
 
-      // Step 2: Production readiness (deposit, design validated, etc.)
-      const readiness = await checkProductionReadiness(id as string);
-      if (!readiness.success) {
-        setErrorMsg(readiness.error || 'Failed to check production readiness');
+      // ── HARD BLOCK: FSM violation — cannot proceed ─────────────────────
+      if (data.blockType === 'hard') {
+        setErrorMsg(data.violations?.join('\n') || data.reason || 'Transition not allowed');
         return;
       }
 
-      if (!readiness.data!.ready) {
-        const issues = readiness.data!.errors.map(e => `• ${e.message}`).join('\n');
+      // ── SOFT BLOCK: business warnings — CEO can override ───────────────
+      if (data.blockType === 'soft' && data.overridable) {
+        const warnings = (data.warnings || []).map((w: string) => `• ${w}`).join('\n');
 
-        // Only CEO can override
         if (profile?.role !== 'ceo') {
-          setErrorMsg('Production safety issues found. Only CEO can override:\n' + issues);
+          setErrorMsg(`Cannot proceed. Only CEO can override:\n${warnings}`);
           return;
         }
 
-        // CEO confirm dialog
+        // CEO confirm dialog for override
         confirm.open({
-          title: 'Production Safety Check',
-          message: `Issues found:\n${issues}\n\nProceed with CEO override?`,
+          title: 'Business Rule Warning',
+          message: `Issues found:\n${warnings}\n\nProceed with CEO override?`,
           onConfirm: async () => {
-            await doStatusUpdate(newStatus);
+            await handleStatusChange(newStatus, true);
           },
         });
         return;
       }
-    }
 
-    await doStatusUpdate(newStatus);
-  }
-
-  async function doStatusUpdate(newStatus: ProjectStatus) {
-    const res = await updateProjectStatus(id as string, newStatus, profile?.id);
-    if (!res.success) {
-      setErrorMsg(res.error || 'Failed to update status');
-    } else {
-      setSuccessMsg(`Status updated to ${newStatus.replace(/_/g, ' ')}`);
-      reload();
+      // Generic error fallback
+      setErrorMsg(data.reason || data.message || data.error || 'Failed to update status');
+    } catch (err) {
+      setErrorMsg('Network error: could not reach transition API');
     }
   }
+
+  // Compute FSM-valid transitions for the current status
+  const fsmTransitions = project
+    ? [...getAvailableTransitions(project.status as ProjectStatus)]
+    : [];
 
   if (loading) return <div className="animate-pulse"><div className="h-96 bg-gray-200 rounded-xl" /></div>;
   if (!project) return (
@@ -559,15 +593,15 @@ export default function ProjectDetailPage() {
         </Card>
       )}
 
-      {/* Status Pipeline */}
-      {perms.canChangeStatus && (
+      {/* Status Pipeline — only shows FSM-valid transitions */}
+      {perms.canChangeStatus && fsmTransitions.length > 0 && (
         <Card>
           <CardHeader><h2 className="font-semibold text-sm">{t('projects.move_to')}</h2></CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {PROJECT_STAGES.filter(s => s.key !== project.status).map(stage => (
-                <Button key={stage.key} variant="secondary" size="sm" onClick={() => handleStatusChange(stage.key as ProjectStatus)}>
-                  {STATUS_ICONS[stage.key]} {stage.label}
+              {fsmTransitions.map(status => (
+                <Button key={status} variant="secondary" size="sm" onClick={() => handleStatusChange(status)}>
+                  {STATUS_ICONS[status]} {status.replace(/_/g, ' ')}
                 </Button>
               ))}
             </div>

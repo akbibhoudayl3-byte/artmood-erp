@@ -2,47 +2,33 @@
 // ArtMood Factory OS -- Project Workflow Validator (pure utilities)
 // ============================================================
 //
-// Extracted from the status-transition and production-safety logic in:
-//   - projects/[id]/page.tsx   (updateStatus function)
-//   - projects/[id]/workflow/page.tsx (production stage FSM)
+// Delegates FSM validation to the canonical source:
+//   @/lib/integrity/project-fsm.ts
+//
+// This module provides:
+//   - Pure client-side transition checks (no Supabase needed)
+//   - Production stage FSM (separate from project FSM)
 //
 // All functions are pure -- no React, no Supabase, no side effects.
 // ============================================================
 
 import type { ProjectStatus, Project } from '@/types/crm';
+import {
+  VALID_TRANSITIONS,
+  isValidTransition,
+  getAvailableTransitions as fsmGetAvailableTransitions,
+} from '@/lib/integrity/project-fsm-core';
 
 // ---------------------------------------------------------------------------
-// Status transition map
+// Re-export FSM as single source of truth
 // ---------------------------------------------------------------------------
 
-/**
- * Allowed transitions between project statuses.
- *
- * Derived from PROJECT_STAGES and the actual UI in `projects/[id]/page.tsx`
- * which shows every stage except the current one as a clickable option for
- * ceo / commercial_manager / workshop_manager.  In practice the intended
- * flow is linear, but the codebase allows any-to-any (with safety checks
- * for certain transitions like -> production).
- *
- * The map below encodes the *recommended* forward transitions.  The
- * `canTransitionTo` function accepts any transition that is either forward
- * or explicitly backwards (to handle corrections / cancellations).
- */
-const FORWARD_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
-  measurements:              ['measurements_confirmed', 'design', 'cancelled'],
-  measurements_confirmed:    ['design', 'cancelled'],
-  design:                    ['client_validation', 'cancelled'],
-  client_validation:         ['production', 'design', 'cancelled'],
-  production:                ['installation', 'cancelled'],
-  installation:              ['delivered', 'cancelled'],
-  delivered:                 [],                          // terminal
-  cancelled:                 ['measurements'],            // allow re-opening
-};
+export { VALID_TRANSITIONS, isValidTransition };
 
 /**
  * All statuses in pipeline order (used for ordering / progress).
  */
-const STATUS_ORDER: ProjectStatus[] = [
+export const STATUS_ORDER: ProjectStatus[] = [
   'measurements',
   'measurements_confirmed',
   'design',
@@ -54,65 +40,60 @@ const STATUS_ORDER: ProjectStatus[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public API — delegates to FSM
 // ---------------------------------------------------------------------------
 
 /**
  * Check whether a transition from `currentStatus` to `targetStatus` is
- * structurally allowed (ignoring business-rule validations like deposit
- * checks).
+ * structurally allowed by the FSM.
  *
- * The existing UI (`PROJECT_STAGES.filter(s => s.key !== project.status)`)
- * allows any non-current status, so this function mirrors that permissive
- * behaviour while still blocking self-transitions and unknown statuses.
+ * HARD BLOCK: returns false for invalid FSM edges.
+ * Does NOT check business rules (those are soft blocks handled server-side).
  */
 export function canTransitionTo(
   currentStatus: ProjectStatus,
   targetStatus: ProjectStatus,
 ): boolean {
   if (currentStatus === targetStatus) return false;
-  if (!STATUS_ORDER.includes(currentStatus)) return false;
-  if (!STATUS_ORDER.includes(targetStatus)) return false;
-  return true;
+  return isValidTransition(currentStatus, targetStatus);
 }
 
 /**
  * Returns the list of statuses the project can move to from its current
- * status.  Mirrors the UI filter: every stage except the current one.
+ * status, as defined by the FSM.
  */
 export function getAvailableTransitions(currentStatus: ProjectStatus): ProjectStatus[] {
-  return STATUS_ORDER.filter(s => s !== currentStatus);
+  return [...fsmGetAvailableTransitions(currentStatus)];
 }
 
 /**
- * Returns the *recommended* forward transitions (the natural next steps).
- * Useful for highlighting primary actions vs secondary/override actions.
+ * Returns the *recommended* forward transitions (same as FSM available).
+ * Kept for backward compatibility.
  */
 export function getRecommendedTransitions(currentStatus: ProjectStatus): ProjectStatus[] {
-  return FORWARD_TRANSITIONS[currentStatus] ?? [];
+  return [...fsmGetAvailableTransitions(currentStatus)];
 }
 
 // ---------------------------------------------------------------------------
-// Business-rule validation for specific transitions
+// Business-rule validation (client-side, for UI display only)
 // ---------------------------------------------------------------------------
 
 export interface TransitionValidation {
   valid: boolean;
+  /** Hard errors (FSM violations) — cannot be overridden */
   errors: string[];
-  /** Warnings that can be overridden (CEO override) */
+  /** Soft warnings (business rules) — CEO can override */
   warnings: string[];
 }
 
 /**
- * Validates business rules for a status transition.
+ * Client-side validation for a status transition.
  *
- * Extracted from the `updateStatus` function in `projects/[id]/page.tsx`:
- *   - Moving to `production` requires deposit_paid
- *   - Moving to `production` warns if design not validated or total_amount is 0
+ * Step 1: FSM check → hard error if invalid edge
+ * Step 2: Business rules → soft warnings (CEO can override server-side)
  *
- * @param project  - The project being transitioned
- * @param targetStatus - The desired new status
- * @param context  - Optional extra context (e.g. critical stock items found externally)
+ * The actual enforcement happens server-side via /api/projects/[id]/transition.
+ * This function provides early feedback in the UI.
  */
 export function validateTransitionRequirements(
   project: Pick<
@@ -121,7 +102,6 @@ export function validateTransitionRequirements(
   >,
   targetStatus: ProjectStatus,
   context?: {
-    /** Names of stock items at zero quantity (fetched externally) */
     criticalStockItemNames?: string[];
   },
 ): TransitionValidation {
@@ -134,35 +114,29 @@ export function validateTransitionRequirements(
     return { valid: false, errors, warnings };
   }
 
-  // ── Production gate ──────────────────────────────────────────────────
-  if (targetStatus === 'production') {
-    // Hard blocker: deposit must be paid
-    if (!project.deposit_paid) {
-      errors.push('50% deposit has not been paid. Please collect the deposit first.');
-    }
+  // ── HARD BLOCK: FSM edge check ──────────────────────────────────────
+  if (!isValidTransition(project.status, targetStatus)) {
+    errors.push(`Cannot transition from "${project.status}" to "${targetStatus}".`);
+    return { valid: false, errors, warnings };
+  }
 
-    // Soft warnings (CEO can override)
+  // ── SOFT BLOCK: Business rules (overridable by CEO) ─────────────────
+
+  if (targetStatus === 'production') {
+    if (!project.deposit_paid) {
+      warnings.push('50% deposit has not been paid.');
+    }
     if (!project.design_validated) {
       warnings.push('Design not validated by client.');
     }
-
     if (project.total_amount === 0) {
       warnings.push('No quote amount set (total_amount is 0).');
     }
-
     const criticals = context?.criticalStockItemNames ?? [];
     if (criticals.length > 0) {
       warnings.push(
         `${criticals.length} stock item(s) at zero: ${criticals.join(', ')}`,
       );
-    }
-  }
-
-  // ── Delivered gate ───────────────────────────────────────────────────
-  if (targetStatus === 'delivered') {
-    // Only allow from installation
-    if (project.status !== 'installation') {
-      warnings.push('Normally projects are delivered after installation.');
     }
   }
 
