@@ -51,10 +51,36 @@ export type TransitionResult =
 // ── Pre-condition Checks (server-only, require DB) ───────────────────────────
 
 /**
- * Sync pre-conditions — soft blocks (business rules).
+ * HARD pre-conditions — critical structural / data integrity checks.
+ * These can NEVER be overridden. Evaluated BEFORE soft checks.
+ * Returns list of violation messages (empty = all pass).
+ */
+function checkHardPreConditions(
+  to: ProjectStatus,
+  project: {
+    client_latitude: number | null;
+    client_longitude: number | null;
+    client_gps_validated: boolean;
+  },
+): string[] {
+  const violations: string[] = [];
+
+  // GPS required before installation (installer needs the address)
+  if (to === 'installation') {
+    if (!project.client_latitude || !project.client_longitude) {
+      violations.push('GPS coordinates are required before scheduling installation (GPS_REQUIRED)');
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * SOFT pre-conditions — business readiness warnings.
+ * CEO can override. Only evaluated when NO hard errors exist.
  * Returns list of warning messages (empty = all pass).
  */
-function checkSyncPreConditions(
+function checkSoftPreConditions(
   to: ProjectStatus,
   project: {
     deposit_paid: boolean;
@@ -77,10 +103,11 @@ function checkSyncPreConditions(
 }
 
 /**
- * Async pre-conditions — soft blocks (business rules requiring DB queries).
+ * Async SOFT pre-conditions — business rules requiring DB queries.
+ * Only evaluated when NO hard errors exist.
  * Returns list of warning messages (empty = all pass).
  */
-async function checkAsyncPreConditions(
+async function checkAsyncSoftPreConditions(
   to: ProjectStatus,
   projectId: string,
   supabase: SupabaseClient,
@@ -136,10 +163,15 @@ async function checkAsyncPreConditions(
 // ── Main Export ───────────────────────────────────────────────────────────────
 
 /**
- * Full transition validation with two-tier blocking.
+ * Full transition validation with strict 3-step ordering.
  *
- * 1. FSM edge check       → HARD BLOCK (cannot override)
- * 2. Business pre-conditions → SOFT BLOCK (CEO can override)
+ * Step 1: FSM edge check     → HARD BLOCK (cannot override)
+ * Step 2: Hard pre-conditions → HARD BLOCK (cannot override)
+ * Step 3: Soft pre-conditions → SOFT BLOCK (CEO can override)
+ *         Only reached if Step 1 + Step 2 produce zero errors.
+ *
+ * GUARANTEE: response is always exactly ONE of: hard | soft | ok.
+ * Never both hard errors AND soft warnings in the same response.
  */
 export async function validateProjectTransition(params: {
   from: ProjectStatus;
@@ -149,13 +181,19 @@ export async function validateProjectTransition(params: {
     deposit_paid: boolean;
     design_validated: boolean;
     total_amount: number;
+    client_latitude: number | null;
+    client_longitude: number | null;
+    client_gps_validated: boolean;
   };
   supabase: SupabaseClient;
 }): Promise<TransitionResult> {
   const { from, to, projectId, project, supabase } = params;
 
-  // 1. FSM edge check — HARD BLOCK (never overridable)
+  // ── Step 1: FSM edge check — HARD BLOCK ────────────────────────────────
   if (!_isValidTransition(from, to)) {
+    console.log('[transition:validation]', JSON.stringify({
+      hardErrorsCount: 1, softWarningsCount: 0, validationStageReached: 'step1_fsm',
+    }));
     return {
       allowed: false,
       blockType: 'hard',
@@ -164,10 +202,31 @@ export async function validateProjectTransition(params: {
     };
   }
 
-  // 2. Sync + Async pre-conditions — SOFT BLOCK (overridable by CEO)
-  const syncWarnings = checkSyncPreConditions(to, project);
-  const asyncWarnings = await checkAsyncPreConditions(to, projectId, supabase);
+  // ── Step 2: Hard pre-conditions — HARD BLOCK ───────────────────────────
+  const hardViolations = checkHardPreConditions(to, project);
+
+  if (hardViolations.length > 0) {
+    console.log('[transition:validation]', JSON.stringify({
+      hardErrorsCount: hardViolations.length, softWarningsCount: 0, validationStageReached: 'step2_hard',
+      violations: hardViolations,
+    }));
+    return {
+      allowed: false,
+      blockType: 'hard',
+      reason: hardViolations[0],
+      violations: hardViolations,
+    };
+  }
+
+  // ── Step 3: Soft pre-conditions — SOFT BLOCK (only if no hard errors) ──
+  const syncWarnings = checkSoftPreConditions(to, project);
+  const asyncWarnings = await checkAsyncSoftPreConditions(to, projectId, supabase);
   const allWarnings = [...syncWarnings, ...asyncWarnings];
+
+  console.log('[transition:validation]', JSON.stringify({
+    hardErrorsCount: 0, softWarningsCount: allWarnings.length, validationStageReached: 'step3_soft',
+    warnings: allWarnings,
+  }));
 
   if (allWarnings.length > 0) {
     return {
@@ -196,6 +255,9 @@ export async function guardProjectTransition(params: {
     deposit_paid: boolean;
     design_validated: boolean;
     total_amount: number;
+    client_latitude: number | null;
+    client_longitude: number | null;
+    client_gps_validated: boolean;
   };
   supabase: SupabaseClient;
   override?: boolean;

@@ -78,7 +78,7 @@ export async function POST(
   // ── Fetch current project ─────────────────────────────────────────────────
   const { data: project, error: fetchErr } = await ctx.supabase
     .from('projects')
-    .select('id, status, client_name, deposit_paid, design_validated, total_amount')
+    .select('id, status, client_name, deposit_paid, design_validated, total_amount, client_latitude, client_longitude, client_gps_validated')
     .eq('id', projectId)
     .single();
 
