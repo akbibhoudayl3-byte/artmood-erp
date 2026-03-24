@@ -177,7 +177,7 @@ export async function getProjectFinancialStatus(
  */
 export async function createPayment(
   data: CreatePaymentData,
-): Promise<ServiceResult<{ id: string }>> {
+): Promise<ServiceResult<{ id: string; duplicate?: boolean }>> {
   if (!data.project_id) return fail('Please select a project.');
   if (!data.amount || data.amount <= 0)
     return fail('Amount must be greater than zero.');
