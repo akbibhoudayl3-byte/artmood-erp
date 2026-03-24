@@ -218,9 +218,12 @@ export async function createPayment(
 
   if (rpcErr) return fail('Failed to record payment: ' + rpcErr.message);
 
+  // Check for business rule rejection (deposit cap, etc.)
+  if (result?.ok === false) {
+    return fail(result.message || result.error || 'Payment rejected by business rules');
+  }
+
   // Create calendar reminder for pending payments (bank_transfer + cheque)
-  // NOTE: We use the locally-derived paymentStatus, NOT result.payment_status,
-  // because the deployed RPC does not return payment_status in its response.
   const paymentId = result?.payment_id;
   console.log('[payment] created:', { paymentId, paymentStatus, method: data.payment_method });
 
