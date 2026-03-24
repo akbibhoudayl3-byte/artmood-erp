@@ -13,6 +13,8 @@ import PhotoUpload from '@/components/ui/PhotoUpload';
 import { useLocale } from '@/lib/hooks/useLocale';
 import { ArrowDownCircle, ArrowUpCircle, Clock, Check } from 'lucide-react';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import { createPayment } from '@/lib/services/payment.service';
+import type { PaymentType, PaymentMethod } from '@/types/finance';
 
 type Tab = 'expense' | 'payment' | 'commitment';
 
@@ -39,6 +41,7 @@ export default function MoneyHubPage() {
   const [payment, setPayment] = useState({
     amount: '', project_id: '', payment_type: 'deposit', payment_method: 'cash', notes: '',
   });
+  const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const [commitment, setCommitment] = useState({
     title: '', amount: '', due_date: '', description: '',
@@ -105,40 +108,44 @@ export default function MoneyHubPage() {
 
     const parsedAmount = parseFloat(payment.amount);
 
-    // Atomic: insert payment + update project paid_amount in one SQL transaction
-    const { data: paymentData, error: payErr } = await supabase.rpc('record_payment_atomic', {
-      p_project_id:  payment.project_id,
-      p_amount:      parsedAmount,
-      p_method:      payment.payment_method,
-      p_type:        payment.payment_type,
-      p_reference:   null,
-      p_notes:       payment.notes || null,
-      p_received_by: profile?.id || null,
+    // Use service layer (handles idempotency, calendar reminders, deposit caps)
+    const res = await createPayment({
+      project_id:      payment.project_id,
+      amount:          parsedAmount,
+      payment_type:    payment.payment_type as PaymentType,
+      payment_method:  payment.payment_method as PaymentMethod,
+      received_at:     new Date().toISOString(),
+      notes:           payment.notes || undefined,
+      received_by:     profile?.id || undefined,
+      idempotency_key: paymentIdempotencyKey,
     });
 
-    if (payErr) {
-      alert('Error: ' + payErr.message);
+    if (!res.success) {
+      alert('Error: ' + res.error);
       setLoading(false);
       return;
     }
 
-    // Create ledger entry
-    await supabase.from('ledger').insert({
-      date: new Date().toISOString(),
-      type: 'income',
-      category: payment.payment_type,
-      amount: parsedAmount,
-      description: payment.notes || 'Payment received',
-      project_id: payment.project_id,
-      source_module: 'money-hub',
-      source_id: paymentData?.payment_id,
-      payment_method: payment.payment_method,
-      created_by: profile?.id,
-    });
+    // Create ledger entry (skip if duplicate)
+    if (!res.data?.duplicate) {
+      await supabase.from('ledger').insert({
+        date: new Date().toISOString(),
+        type: 'income',
+        category: payment.payment_type,
+        amount: parsedAmount,
+        description: payment.notes || 'Payment received',
+        project_id: payment.project_id,
+        source_module: 'money-hub',
+        source_id: res.data?.id,
+        payment_method: payment.payment_method,
+        created_by: profile?.id,
+      });
+    }
 
     setLoading(false);
     showSuccess();
     setPayment({ amount: '', project_id: '', payment_type: 'deposit', payment_method: 'cash', notes: '' });
+    setPaymentIdempotencyKey(crypto.randomUUID()); // New key for next payment
   }
 
   async function submitCommitment(e: React.FormEvent) {

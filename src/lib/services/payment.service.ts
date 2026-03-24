@@ -48,6 +48,7 @@ export interface CreatePaymentData {
   payment_type: PaymentType;
   payment_method: PaymentMethod;
   received_at: string;
+  idempotency_key: string;  // REQUIRED — frontend generates crypto.randomUUID()
   reference_number?: string;
   notes?: string;
   received_by?: string;
@@ -196,24 +197,29 @@ export async function createPayment(
     }
   }
 
+  // Idempotency key is REQUIRED — frontend must generate it
+  if (!data.idempotency_key) {
+    return fail('idempotency_key is required. Frontend must generate crypto.randomUUID() before submitting.');
+  }
+
   // Derive payment status from method
   const paymentStatus = derivePaymentStatus(data.payment_method);
 
   // Atomic: insert payment + update project paid_amount in one SQL transaction
-  // Single 11-param RPC handles everything including payment_status, cheque_id, proof_url.
   const { data: result, error: rpcErr } = await supabase()
     .rpc('record_payment_atomic', {
-      p_project_id:     data.project_id,
-      p_amount:         data.amount,
-      p_method:         data.payment_method,
-      p_type:           data.payment_type,
-      p_reference:      data.reference_number || null,
-      p_notes:          data.notes || null,
-      p_received_by:    data.received_by || null,
-      p_received_at:    new Date(data.received_at).toISOString(),
-      p_payment_status: paymentStatus,
-      p_cheque_id:      data.cheque_id || null,
-      p_proof_url:      data.proof_url || null,
+      p_project_id:      data.project_id,
+      p_amount:          data.amount,
+      p_method:          data.payment_method,
+      p_type:            data.payment_type,
+      p_reference:       data.reference_number || null,
+      p_notes:           data.notes || null,
+      p_received_by:     data.received_by || null,
+      p_received_at:     new Date(data.received_at).toISOString(),
+      p_payment_status:  paymentStatus,
+      p_cheque_id:       data.cheque_id || null,
+      p_proof_url:       data.proof_url || null,
+      p_idempotency_key: data.idempotency_key,
     });
 
   if (rpcErr) return fail('Failed to record payment: ' + rpcErr.message);
@@ -221,6 +227,12 @@ export async function createPayment(
   // Check for business rule rejection (deposit cap, etc.)
   if (result?.ok === false) {
     return fail(result.message || result.error || 'Payment rejected by business rules');
+  }
+
+  // Duplicate detected by idempotency — skip calendar reminder
+  if (result?.duplicate) {
+    console.log('[payment] Duplicate detected (idempotent):', result.payment_id);
+    return ok({ id: result.payment_id, duplicate: true });
   }
 
   // Create calendar reminder for pending payments (bank_transfer + cheque)

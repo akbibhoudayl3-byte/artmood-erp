@@ -69,6 +69,7 @@ export default function PaymentsPage() {
   const modal = useFormModal(INITIAL_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   // Confirm dialog
   const confirm = useConfirmDialog();
@@ -219,6 +220,7 @@ export default function PaymentsPage() {
       reference_number: reference_number || undefined,
       notes: notes || undefined,
       received_by: profile?.id,
+      idempotency_key: idempotencyKey,
     };
 
     const res = await createPayment(paymentData);
@@ -314,7 +316,7 @@ export default function PaymentsPage() {
               <span className="font-semibold text-emerald-600">{fmtAmount(totalThisMonth)}</span>
             </p>
           </div>
-          <Button onClick={() => { modal.openCreate({ received_at: new Date().toISOString().split('T')[0] }); setFormError(null); setFinancialStatus(null); }}>
+          <Button onClick={() => { setIdempotencyKey(crypto.randomUUID()); modal.openCreate({ received_at: new Date().toISOString().split('T')[0] }); setFormError(null); setFinancialStatus(null); }}>
             <Plus size={18} /> {t('finance.add_payment') || 'Add Payment'}
           </Button>
         </div>
