@@ -26,7 +26,7 @@ export default function NewProjectPage() {
     client_email: '',
     address: '',
     city: '',
-    project_type: 'kitchen',
+    project_type: '',
     priority: 'normal',
     total_amount: '',
     notes: '',
@@ -39,6 +39,7 @@ export default function NewProjectPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.client_name || !form.client_phone) return;
+    if (!form.project_type) { setFormError('Le type de projet est requis.'); setLoading(false); return; }
     setLoading(true);
 
     const { data, error } = await supabase.from('projects').insert({
@@ -102,8 +103,9 @@ export default function NewProjectPage() {
           <CardHeader><h2 className="font-semibold">Project Details</h2></CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <Select label="Type" value={form.project_type} onChange={(e) => update('project_type', e.target.value)}
+              <Select label="Type *" value={form.project_type} onChange={(e) => update('project_type', e.target.value)}
                 options={[
+                  { value: '', label: '-- Sélectionner le type --' },
                   { value: 'kitchen', label: 'Cuisine' },
                   { value: 'dressing', label: 'Dressing' },
                   { value: 'bathroom', label: 'Salle de bain' },
