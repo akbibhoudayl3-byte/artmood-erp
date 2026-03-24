@@ -194,7 +194,8 @@ BEGIN
       INSERT INTO audit_log (user_id, action, table_name, record_id, old_data, new_data, reason)
       VALUES (
         p_user_id,
-        'ceo_production_override',
+        CASE WHEN p_to_status = 'installation' THEN 'ceo_installation_override'
+             ELSE 'ceo_production_override' END,
         'projects',
         p_project_id,
         jsonb_build_object('status', v_from_status, 'confirmed_amount', v_confirmed_sum),
