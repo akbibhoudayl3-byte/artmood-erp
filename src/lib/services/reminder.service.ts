@@ -41,6 +41,11 @@ export async function backfillFinancialReminders(
     .eq('type', 'received');
 
   for (const cheque of unresolvedCheques || []) {
+    // GUARD: skip if cheque has no valid id
+    if (!cheque.id) {
+      errors.push('Skipped cheque with null id');
+      continue;
+    }
     // Check if active event exists
     const { data: existing } = await supabase
       .from('calendar_events')
@@ -77,6 +82,11 @@ export async function backfillFinancialReminders(
     .eq('payment_method', 'bank_transfer');
 
   for (const payment of pendingTransfers || []) {
+    // GUARD: skip if payment has no valid id
+    if (!payment.id) {
+      errors.push('Skipped payment with null id');
+      continue;
+    }
     const { data: existing } = await supabase
       .from('calendar_events')
       .select('id')
