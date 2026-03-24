@@ -200,37 +200,23 @@ export async function createPayment(
   const paymentStatus = derivePaymentStatus(data.payment_method);
 
   // Atomic: insert payment + update project paid_amount in one SQL transaction
-  // NOTE: The deployed RPC only accepts 8 params (no payment_status, cheque_id, proof_url).
-  // We set those fields via a post-RPC UPDATE.
+  // Single 11-param RPC handles everything including payment_status, cheque_id, proof_url.
   const { data: result, error: rpcErr } = await supabase()
     .rpc('record_payment_atomic', {
-      p_project_id:  data.project_id,
-      p_amount:      data.amount,
-      p_method:      data.payment_method,
-      p_type:        data.payment_type,
-      p_reference:   data.reference_number || null,
-      p_notes:       data.notes || null,
-      p_received_by: data.received_by || null,
-      p_received_at: new Date(data.received_at).toISOString(),
+      p_project_id:     data.project_id,
+      p_amount:         data.amount,
+      p_method:         data.payment_method,
+      p_type:           data.payment_type,
+      p_reference:      data.reference_number || null,
+      p_notes:          data.notes || null,
+      p_received_by:    data.received_by || null,
+      p_received_at:    new Date(data.received_at).toISOString(),
+      p_payment_status: paymentStatus,
+      p_cheque_id:      data.cheque_id || null,
+      p_proof_url:      data.proof_url || null,
     });
 
   if (rpcErr) return fail('Failed to record payment: ' + rpcErr.message);
-
-  // Set payment_status + optional fields not handled by RPC
-  if (result?.payment_id) {
-    const extraFields: Record<string, unknown> = { payment_status: paymentStatus };
-    if (data.cheque_id) extraFields.cheque_id = data.cheque_id;
-    if (data.proof_url) extraFields.proof_url = data.proof_url;
-
-    const { error: updateErr } = await supabase()
-      .from('payments')
-      .update(extraFields)
-      .eq('id', result.payment_id);
-
-    if (updateErr) {
-      console.error('[payment] Failed to set payment_status:', updateErr.message);
-    }
-  }
 
   // Create calendar reminder for pending payments (bank_transfer + cheque)
   // NOTE: We use the locally-derived paymentStatus, NOT result.payment_status,
