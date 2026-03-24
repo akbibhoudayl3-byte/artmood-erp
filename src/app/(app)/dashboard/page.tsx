@@ -72,6 +72,7 @@ export default function DashboardPage() {
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expense: number }[]>([]);
   const [brainStats, setBrainStats] = useState({ lossCount: 0, criticalCount: 0, warnCount: 0, wasteAlerts: 0 });
   const [pendingFinance, setPendingFinance] = useState({ chequesToDeposit: 0, chequesToDepositAmount: 0, chequesInClearing: 0, chequesInClearingAmount: 0, transfersPending: 0, transfersPendingAmount: 0 });
+  const [financialReminders, setFinancialReminders] = useState<{ id: string; title: string; event_date: string; event_type: string; reference_type: string | null }[]>([]);
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
 
   // Tick "X seconds ago" counter
@@ -262,6 +263,16 @@ export default function DashboardPage() {
           transfersPending: transfersPending?.length || 0,
           transfersPendingAmount: (transfersPending || []).reduce((s, p) => s + Number(p.amount), 0),
         });
+
+        // Financial reminders (read-only, no writes)
+        const { data: reminders } = await supabase
+          .from('calendar_events')
+          .select('id, title, event_date, event_type, reference_type')
+          .in('event_type', ['cheque_due', 'payment_due'])
+          .eq('is_completed', false)
+          .order('event_date')
+          .limit(5);
+        setFinancialReminders(reminders || []);
       }
 
       setLastUpdated(new Date());
@@ -546,6 +557,42 @@ export default function DashboardPage() {
                     </div>
                   </button>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Financial Reminders (read-only) */}
+        {canViewFinance && financialReminders.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <Calendar size={16} className="text-blue-600" />
+                  Rappels financiers
+                </h3>
+                <button onClick={() => router.push('/calendar')} className="text-xs text-[#C9956B] font-semibold hover:text-[#B8845A]">
+                  Voir tout
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {financialReminders.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => router.push(r.reference_type === 'cheque' ? '/finance/cheques' : '/finance/payments')}
+                    className="w-full flex items-center gap-3 p-2.5 bg-gray-50 dark:bg-gray-800/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
+                  >
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${r.event_type === 'cheque_due' ? 'bg-blue-500' : 'bg-orange-500'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-[#1a1a2e] dark:text-white truncate">{r.title}</p>
+                      <p className="text-[10px] text-[#64648B]">
+                        {new Date(r.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                      </p>
+                    </div>
+                  </button>
+                ))}
               </div>
             </CardContent>
           </Card>

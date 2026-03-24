@@ -217,6 +217,25 @@ export async function createPayment(
 
   if (rpcErr) return fail('Failed to record payment: ' + rpcErr.message);
 
+  // Create calendar reminder for bank transfers (pending_proof)
+  if (result.payment_status === 'pending_proof') {
+    // Find project name for the reminder description
+    const { data: proj } = await supabase()
+      .from('projects')
+      .select('client_name')
+      .eq('id', data.project_id)
+      .single();
+
+    await createPaymentReminder(
+      result.payment_id,
+      data.amount,
+      proj?.client_name || 'Unknown',
+      data.reference_number || null,
+      new Date(data.received_at).toISOString().split('T')[0],
+      data.received_by || null,
+    );
+  }
+
   return ok({ id: result.payment_id, payment_status: result.payment_status });
 }
 
@@ -372,6 +391,82 @@ export async function syncProjectPaidAmount(
   return ok();
 }
 
+// ── Calendar Event Helpers ─────────────────────────────────────────────────
+
+/**
+ * Mark the linked calendar event as completed when a payment/cheque is resolved.
+ * Uses reference_type + reference_id to find the active event.
+ * Logged, never silent.
+ */
+async function completeLinkedCalendarEvent(
+  referenceType: string,
+  referenceId: string,
+): Promise<{ completed: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase()
+      .from('calendar_events')
+      .update({ is_completed: true, completed_at: new Date().toISOString() })
+      .eq('reference_type', referenceType)
+      .eq('reference_id', referenceId)
+      .eq('is_completed', false)
+      .select('id');
+
+    if (error) {
+      console.error('[calendar] Failed to complete event:', error.message);
+      return { completed: false, error: error.message };
+    }
+
+    const count = data?.length || 0;
+    if (count > 0) {
+      console.log('[calendar] Completed', count, 'event(s) for', referenceType, referenceId);
+    }
+    return { completed: count > 0 };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[calendar] Exception completing event:', msg);
+    return { completed: false, error: msg };
+  }
+}
+
+/**
+ * Create a calendar reminder for a pending payment (bank transfer).
+ * Uses plain INSERT — DB partial unique index prevents duplicates.
+ * Catches unique_violation (23505) silently.
+ */
+async function createPaymentReminder(
+  paymentId: string,
+  amount: number,
+  projectName: string,
+  reference: string | null,
+  eventDate: string,
+  createdBy: string | null,
+): Promise<void> {
+  try {
+    const { error } = await supabase().from('calendar_events').insert({
+      title: `Virement à confirmer: ${new Intl.NumberFormat('fr-MA').format(amount)} MAD`,
+      description: `Projet: ${projectName}${reference ? '. Ref: ' + reference : ''}`,
+      event_type: 'payment_due',
+      event_date: eventDate,
+      reference_type: 'payment',
+      reference_id: paymentId,
+      created_by: createdBy,
+    });
+
+    if (error) {
+      // 23505 = unique_violation from partial index — expected for duplicates, ignore
+      if (error.code === '23505') {
+        console.log('[calendar] Reminder already exists for payment', paymentId);
+      } else {
+        console.error('[calendar] Failed to create payment reminder:', error.message);
+      }
+    } else {
+      console.log('[calendar] Created reminder for payment', paymentId);
+    }
+  } catch (err) {
+    console.error('[calendar] Exception creating reminder:', err);
+  }
+}
+
 // ── Payment Status Actions ────────────────────────────────────────────────
 
 /**
@@ -408,6 +503,9 @@ export async function confirmPayment(
 
   // Resync project flags (now includes this newly confirmed amount)
   await syncProjectPaidAmount(payment.project_id);
+
+  // Auto-complete linked calendar reminder
+  await completeLinkedCalendarEvent('payment', paymentId);
 
   return ok();
 }
@@ -447,6 +545,9 @@ export async function rejectPayment(
     await syncProjectPaidAmount(payment.project_id);
   }
 
+  // Auto-complete linked calendar reminder
+  await completeLinkedCalendarEvent('payment', paymentId);
+
   return ok();
 }
 
@@ -470,10 +571,14 @@ export async function onChequeStatusChange(
   if (!payment) return ok(); // No linked payment — nothing to do
 
   if (newChequeStatus === 'cleared') {
+    // Auto-complete cheque calendar event
+    await completeLinkedCalendarEvent('cheque', chequeId);
     if (payment.payment_status !== 'confirmed') {
       return confirmPayment(payment.id);
     }
   } else if (newChequeStatus === 'bounced') {
+    // Auto-complete cheque calendar event
+    await completeLinkedCalendarEvent('cheque', chequeId);
     if (payment.payment_status !== 'rejected') {
       return rejectPayment(payment.id, 'Chèque rejeté / bounced');
     }
