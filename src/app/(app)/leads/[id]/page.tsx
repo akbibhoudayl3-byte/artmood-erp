@@ -348,18 +348,20 @@ export default function LeadDetailPage() {
         </Card>
       )}
 
-      {/* Convert to Project Card — shown only when won and no project yet */}
+      {/* Auto-conversion: project created automatically when status → won */}
+      {/* Fallback: if auto-conversion failed, show manual retry */}
       {lead.status === 'won' && !linkedProjectId && canManageLeads && (
-        <div className="rounded-2xl border-2 border-green-400 bg-green-50 p-4 flex items-center justify-between gap-3">
+        <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 flex items-center justify-between gap-3">
           <div>
-            <p className="font-bold text-green-800 text-sm">This lead is ready to become a project!</p>
-            <p className="text-xs text-green-600 mt-0.5">Create a project from this won lead to track production and delivery.</p>
+            <p className="font-bold text-amber-800 text-sm">Le projet n&apos;a pas été créé automatiquement.</p>
+            <p className="text-xs text-amber-600 mt-0.5">Cliquez pour réessayer la création du projet.</p>
           </div>
           <button
-            onClick={openConvertModal}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl whitespace-nowrap transition-colors"
+            onClick={handleCreateProject}
+            disabled={converting}
+            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl whitespace-nowrap transition-colors disabled:opacity-50"
           >
-            <Hammer size={16} /> Create Project from Lead
+            <Hammer size={16} /> {converting ? 'Création...' : 'Réessayer'}
           </button>
         </div>
       )}
