@@ -138,6 +138,35 @@ export default function LeadDetailPage() {
       lead_id: id, user_id: profile?.id, activity_type: 'status_change',
       description: `Status changed to ${newStatus}`,
     });
+
+    // AUTO-CONVERT: when lead becomes 'won', create project automatically
+    if (newStatus === 'won' && lead && !linkedProjectId) {
+      const { data: newProject, error: projErr } = await supabase
+        .from('projects')
+        .insert({
+          client_name: lead.full_name,
+          client_phone: lead.phone,
+          client_email: lead.email || null,
+          client_city: lead.city || null,
+          project_type: 'kitchen',
+          status: 'measurements',
+          created_by: profile?.id,
+          lead_id: lead.id,
+          notes: lead.notes || null,
+        })
+        .select('id, reference_code')
+        .single();
+
+      if (!projErr && newProject) {
+        await supabase.from('lead_activities').insert({
+          lead_id: id, user_id: profile?.id, activity_type: 'status_change',
+          description: `Auto-converted to project: ${newProject.reference_code}`,
+        });
+        router.push(`/projects/${newProject.id}`);
+        return;
+      }
+    }
+
     loadData();
   }
 
@@ -168,6 +197,7 @@ export default function LeadDetailPage() {
           client_email: convertForm.client_email.trim() || null,
           client_city: convertForm.client_city.trim() || null,
           total_amount: convertForm.budget ? parseFloat(convertForm.budget) : 0,
+          project_type: 'kitchen',
           status: 'measurements',
           created_by: profile?.id,
           lead_id: lead?.id,
